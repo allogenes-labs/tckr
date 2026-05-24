@@ -53,6 +53,7 @@ def test_every_data_source_module_in_registry():
 def test_capabilities_returns_serializable_dict():
     """capabilities() output must be JSON-serializable for the introspection tool."""
     import json
+
     from tckr import registry
 
     caps = registry.capabilities()

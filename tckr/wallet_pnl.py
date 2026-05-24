@@ -58,8 +58,8 @@ from __future__ import annotations
 import logging
 import re
 from collections import defaultdict, deque
-from datetime import datetime, timedelta, timezone
-from typing import Iterable
+from collections.abc import Iterable
+from datetime import UTC, datetime, timedelta
 
 from tckr import _http, birdeye, helius, settings
 from tckr.cache import TTLCache
@@ -96,7 +96,7 @@ def _f(v) -> float | None:
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def detect_chain(address: str) -> str | None:
@@ -258,7 +258,7 @@ async def _solana_transfers(address: str, *, lookback_days: int) -> list[dict]:
     if not swaps:
         return []
     # Filter by lookback window.
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=lookback_days)).isoformat()
+    cutoff = (datetime.now(UTC) - timedelta(days=lookback_days)).isoformat()
     swaps = [s for s in swaps if (s.get("ts") or "") >= cutoff]
 
     # SOL price for valuing wSOL legs. One lookup per call.
@@ -297,7 +297,7 @@ async def _base_transfers(address: str, *, lookback_days: int) -> list[dict]:
     if not isinstance(body, dict):
         return []
     rows = body.get("result") or []
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=lookback_days)).isoformat()
+    cutoff = (datetime.now(UTC) - timedelta(days=lookback_days)).isoformat()
     transfers: list[dict] = []
     for r in rows:
         if not isinstance(r, dict):

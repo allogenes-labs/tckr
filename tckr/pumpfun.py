@@ -55,7 +55,7 @@ IDL revisions of the bonding curve account itself.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from solders.pubkey import Pubkey
 
@@ -107,13 +107,13 @@ def _ts_to_iso(v) -> str | None:
         ts = int(v)
         if ts > 10_000_000_000:  # treat as ms
             ts //= 1000
-        return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+        return datetime.fromtimestamp(ts, tz=UTC).isoformat()
     except (TypeError, ValueError, OSError):
         return None
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _curve_pct_from_token_balance(token_balance_decimal: float) -> float | None:
@@ -719,7 +719,7 @@ async def curve_trajectory(mint: str, *, hours: int = 24,
         return []
     capped_hours = max(1, min(int(hours), 24 * 30))
     capped_limit = max(1, min(int(limit), 1000))
-    since_dt = datetime.now(timezone.utc) - timedelta(hours=capped_hours)
+    since_dt = datetime.now(UTC) - timedelta(hours=capped_hours)
     since_iso = since_dt.isoformat().replace("+00:00", "Z")
 
     ck = ("curve_trajectory", mint, capped_hours, capped_limit)

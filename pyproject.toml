@@ -89,6 +89,8 @@ select = ["E", "F", "W", "I", "B", "UP"]
 ignore = [
     "E501",  # line length handled by formatter
     "B008",  # function-call default args (httpx uses them)
+    "E701",  # single-line `if x: y = z` is a deliberate terse idiom in this codebase
+    "UP031", # %-format in GraphQL query bodies stays readable; f-strings collide with {...}
 ]
 
 [tool.ruff.lint.per-file-ignores]

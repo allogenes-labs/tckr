@@ -16,12 +16,12 @@ typo-guard will fail until you do.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 
 from tckr import settings
 
 
-class Tier(str, Enum):
+class Tier(StrEnum):
     """Access tier — drives the tag shown in tool descriptions."""
     KEYLESS_FREE = "keyless-free"   # no signup, no key
     KEYED_FREE   = "keyed-free"     # free signup, key required

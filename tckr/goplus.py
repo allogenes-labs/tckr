@@ -27,7 +27,7 @@ Docs: https://docs.gopluslabs.io/reference/api-overview
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from tckr import _http, settings
 from tckr.cache import TTLCache
@@ -67,7 +67,7 @@ _BOOL_FIELDS = {
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _f(v) -> float | None:

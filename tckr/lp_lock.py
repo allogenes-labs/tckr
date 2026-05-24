@@ -83,9 +83,10 @@ Reuses existing `tckr.alchemy` for RPC — no new keys required. Uses
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from eth_abi import decode as abi_decode, encode as abi_encode
+from eth_abi import decode as abi_decode
+from eth_abi import encode as abi_encode
 from eth_utils import keccak
 
 from tckr import _http, alchemy, settings
@@ -180,7 +181,7 @@ _meta_cache = TTLCache()  # for slow-changing things like (token0,token1,fee)
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _hex_to_int(h) -> int | None:

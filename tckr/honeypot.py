@@ -18,7 +18,7 @@ Docs: https://honeypot.is/api
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from tckr import _http, settings
 from tckr.cache import TTLCache
@@ -37,7 +37,7 @@ _CHAIN_IDS: dict[str, int] = {
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _f(v) -> float | None:

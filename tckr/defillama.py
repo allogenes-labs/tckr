@@ -13,7 +13,7 @@ Docs: https://defillama.com/docs/api
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from tckr import _http, settings
 from tckr.cache import TTLCache
@@ -54,7 +54,7 @@ def _dl_name(network: str | None) -> str | None:
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _f(v) -> float | None:
@@ -67,7 +67,7 @@ def _f(v) -> float | None:
 def _ts_to_iso(ts) -> str | None:
     """DefiLlama uses unix seconds for `date`."""
     try:
-        return datetime.fromtimestamp(int(ts), tz=timezone.utc).isoformat()
+        return datetime.fromtimestamp(int(ts), tz=UTC).isoformat()
     except (TypeError, ValueError, OSError):
         return None
 

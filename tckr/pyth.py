@@ -19,7 +19,7 @@ interval — wide conf relative to price = data quality is shaky right now.
 from __future__ import annotations
 
 import logging
-from typing import Iterable
+from collections.abc import Iterable
 
 from tckr import _http, settings
 from tckr.cache import TTLCache

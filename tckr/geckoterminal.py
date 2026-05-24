@@ -13,7 +13,7 @@ Docs: https://www.geckoterminal.com/dex-api
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from tckr import _http, settings
 from tckr.cache import TTLCache
@@ -31,7 +31,7 @@ _TIMEFRAMES = {"day", "hour", "minute"}
 # --------------------------- parsing helpers ---------------------------
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _f(v) -> float | None:
@@ -233,7 +233,7 @@ async def pool_ohlcv(
             continue
         ts, o, hi, lo, c, v = row[:6]
         try:
-            t_iso = datetime.fromtimestamp(int(ts), tz=timezone.utc).isoformat()
+            t_iso = datetime.fromtimestamp(int(ts), tz=UTC).isoformat()
         except (TypeError, ValueError, OSError):
             continue
         candles.append({"t": t_iso, "o": _f(o), "h": _f(hi),

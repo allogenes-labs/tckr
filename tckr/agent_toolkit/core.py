@@ -27,8 +27,9 @@ with a narrower filter if it needs more.
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 from tckr import registry
 
@@ -1088,6 +1089,7 @@ async def _t_tt_projects(args: dict):
 )
 async def _t_tg_query_subgraph(args: dict):
     import json as _json
+
     from tckr import thegraph as tg
     variables = None
     raw = args.get("variables")
@@ -1129,7 +1131,7 @@ def render_tools_doc() -> str:
     separated by a one-line header per tier so the agent can see at a glance
     which subset is available without keys.
     """
-    from tckr.registry import REGISTRY, Tier
+    from tckr.registry import REGISTRY
 
     # Bucket tools by their module's tier; tools without a module (e.g.
     # `capabilities`) get their own "Meta" section.

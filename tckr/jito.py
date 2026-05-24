@@ -31,9 +31,9 @@ from __future__ import annotations
 
 import logging
 import statistics
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from tckr import _http, helius, settings
+from tckr import _http, settings
 from tckr.cache import TTLCache
 
 log = logging.getLogger("tckr.jito")
@@ -68,12 +68,12 @@ def _f(v) -> float | None:
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _ts_to_iso(secs) -> str | None:
     try:
-        return datetime.fromtimestamp(int(secs), tz=timezone.utc).isoformat()
+        return datetime.fromtimestamp(int(secs), tz=UTC).isoformat()
     except (TypeError, ValueError, OSError):
         return None
 

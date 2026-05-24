@@ -18,7 +18,7 @@ Docs: https://docs.helius.dev/
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from tckr import _http, settings
 from tckr.cache import TTLCache
@@ -37,7 +37,7 @@ def _endpoint() -> str | None:
 
 def _ts_to_iso(secs) -> str | None:
     try:
-        return datetime.fromtimestamp(int(secs), tz=timezone.utc).isoformat()
+        return datetime.fromtimestamp(int(secs), tz=UTC).isoformat()
     except (TypeError, ValueError, OSError):
         return None
 

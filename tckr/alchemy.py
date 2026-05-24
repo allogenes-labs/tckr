@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
 
 from tckr import _http, settings
 from tckr.cache import TTLCache

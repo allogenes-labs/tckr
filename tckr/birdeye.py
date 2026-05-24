@@ -17,7 +17,7 @@ Docs: https://docs.birdeye.so/reference
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from tckr import _http, settings
 from tckr.cache import TTLCache
@@ -34,7 +34,7 @@ _SUPPORTED_CHAINS = {
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _f(v) -> float | None:
@@ -53,7 +53,7 @@ def _i(v) -> int | None:
 
 def _ms_to_iso(ms) -> str | None:
     try:
-        return datetime.fromtimestamp(int(ms) / 1000, tz=timezone.utc).isoformat()
+        return datetime.fromtimestamp(int(ms) / 1000, tz=UTC).isoformat()
     except (TypeError, ValueError, OSError):
         return None
 

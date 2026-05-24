@@ -129,7 +129,7 @@ async def smoke_defillama() -> None:
           f"latest_tvl=${hist[-1]['tvl_usd']:,.0f}")
 
     top_base = await dl.protocols("base", min_tvl_usd=10_000_000, limit=5)
-    print(f"[defillama] top 5 Base protocols (>=$10M TVL):")
+    print("[defillama] top 5 Base protocols (>=$10M TVL):")
     for p in top_base:
         print(f"  {p['name']:<28} {p['category']:<15} tvl=${p['tvl_usd']:,.0f} 7dChg={p['change_7d']}")
     assert top_base, "expected Base protocols"
@@ -143,7 +143,7 @@ async def smoke_defillama() -> None:
           f"{[(s['symbol'], int(s['chain_circulating_usd'] or 0)) for s in sc[:3]]}")
 
     yp = await dl.yields("base", min_tvl_usd=5_000_000, limit=3)
-    print(f"[defillama] top 3 Base yields (>=$5M TVL):")
+    print("[defillama] top 3 Base yields (>=$5M TVL):")
     for y in yp:
         print(f"  {y['project']:<20} {y['symbol']:<15} apy={y['apy']}% tvl=${y['tvl_usd']:,.0f}")
 
@@ -162,7 +162,7 @@ async def smoke_alchemy() -> None:
 
     holdings = await al.token_balances(vitalik, network="base",
                                        hide_zero=True, max_tokens=10)
-    print(f"[alchemy] vitalik top-10 Base ERC-20 holdings (by raw):")
+    print("[alchemy] vitalik top-10 Base ERC-20 holdings (by raw):")
     for t in holdings:
         sym = t.get("symbol") or "?"
         bal = t.get("balance")
@@ -203,7 +203,7 @@ async def smoke_helius() -> None:
         print(f"  {sym:<10} bal={bal_str:<14} price=${price} value=${value}")
 
     sigs = await he.transactions(sol_wallet, limit=3)
-    print(f"[helius] last 3 signatures:")
+    print("[helius] last 3 signatures:")
     for s in sigs:
         err = "err" if s["err"] else "ok"
         print(f"  {s['block_ts']} {err:<4} slot={s['slot']} sig={s['signature'][:16]}…")

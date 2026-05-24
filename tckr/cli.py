@@ -20,7 +20,6 @@ import sys
 
 from tckr import settings
 
-
 # --------------------------- formatters ---------------------------
 
 def _fmt_usd(v) -> str:

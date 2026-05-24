@@ -28,7 +28,7 @@ Docs (informal): https://whitepaper.virtuals.io
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from tckr import _http, settings
 from tckr.cache import TTLCache
@@ -64,7 +64,7 @@ def _ts_to_iso(v) -> str | None:
         ts = int(v)
         if ts > 10_000_000_000:
             ts //= 1000
-        return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+        return datetime.fromtimestamp(ts, tz=UTC).isoformat()
     except (TypeError, ValueError, OSError):
         return None
 

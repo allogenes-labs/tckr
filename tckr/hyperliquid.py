@@ -14,7 +14,7 @@ Docs: https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/info-en
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from tckr import _http, settings
 from tckr.cache import TTLCache
@@ -26,11 +26,11 @@ _cache = TTLCache()
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _now_ms() -> int:
-    return int(datetime.now(timezone.utc).timestamp() * 1000)
+    return int(datetime.now(UTC).timestamp() * 1000)
 
 
 def _f(v) -> float | None:
@@ -42,7 +42,7 @@ def _f(v) -> float | None:
 
 def _ms_to_iso(ms) -> str | None:
     try:
-        return datetime.fromtimestamp(int(ms) / 1000, tz=timezone.utc).isoformat()
+        return datetime.fromtimestamp(int(ms) / 1000, tz=UTC).isoformat()
     except (TypeError, ValueError, OSError):
         return None
 
