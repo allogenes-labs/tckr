@@ -1,0 +1,41 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write  # trusted-publisher (no API token required if configured on PyPI)
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build wheel + sdist
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+  # NOTE: gitlawb mirroring is deliberately NOT done in CI.
+  #
+  # gitlawb uses a custom transport (`gitlawb://<DID>/<repo>`) that requires
+  # the `gl` CLI + `git-remote-gitlawb` helper installed on the pushing host,
+  # plus an Ed25519 identity keypair (`~/.gitlawb/identity.pem`). Putting that
+  # keypair into a CI secret means a CI compromise compromises your entire
+  # gitlawb identity. Mirror locally with `scripts/release-to-gitlawb.sh`
+  # after each tag instead — your identity key never leaves your machine.
+  # See CONTRIBUTING.md for the full release flow.
