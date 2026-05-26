@@ -86,7 +86,7 @@ tckr status
 |---|---|---|---|
 | `geckoterminal` | keyless | — | DEX pools, tokens, OHLCV (Base / Solana / ETH / …) |
 | `dexscreener` | keyless | — | DEX pairs, search, new-pair listings, paid-boost rankings |
-| `hyperliquid` | keyless | — | Single-exchange perps: funding, OI, marks |
+| `hyperliquid` | keyless | — | Single-exchange perps: funding, OI, marks, candle history |
 | `defillama` | keyless | — | Chain / protocol TVL, DEX volume, stablecoins, yields |
 | `goplus` | keyless | — | EVM contract security scans (honeypot, taxes, holders) |
 | `honeypot` | keyless | — | EVM sell-simulation (ETH / BSC / Base) |
@@ -121,6 +121,53 @@ Sources are designed to chain. A few examples:
 - `clanker.new_tokens()[i]["requestor_fid"]` → `neynar.user_popular_casts(fid)` — what's the deployer saying about their token?
 - `clanker.new_tokens()[i]["pool_address"]` (V4 PoolId) → `lp_lock(pool_id)` — is the Clanker LP locked?
 - `pumpfun.top_traders(mint)` → `wallet_pnl(wallet)` — is the top buyer actually profitable across their other trades?
+
+## Fallback cascade: `tckr.quotes` and `tckr.history`
+
+Real-world consumers of "give me a price for X" or "give me 30 days of closes for X" usually want best-available data, not a particular provider. Two cascade modules wrap the common pattern so callers don't reimplement it:
+
+```python
+from tckr import quotes, history
+
+# USD spot price, CoinGecko → Hyperliquid fallback
+q = await quotes.get(["BTC", "ETH", "NEAR", "HYPE"])
+# {'BTC': {'price': 77150.0, 'source': 'coingecko', ...}, 'HYPE': {'price': 63.6, 'source': 'hyperliquid', ...}, ...}
+
+# 30-day daily candles, CoinGecko market_chart → Hyperliquid candleSnapshot
+h = await history.candles(["BTC", "HYPE"], days=30)
+# h["HYPE"]["source"] == "hyperliquid"  ← CG doesn't have HYPE (perp-only token)
+```
+
+Each result carries a `source` field so callers can detect when fallback ran. The same cascades are exposed as agent tools (`quote`, `candles`) — agents calling those skip the provider-routing decision entirely.
+
+### Per-provider failure modes (what the cascade compensates for)
+
+| Provider | Strength | Failure mode |
+|---|---|---|
+| `coingecko` (free tier) | ~14k coins, market cap rank, categories, global stats | Hard 429s under load — `market_chart` is the most rate-limited endpoint |
+| `hyperliquid` | ~230 perps, deep funding/OI data, candle history, no observed rate limit | Coverage limited to perp-listed tokens (majors + mid-caps) |
+| `geckoterminal` | DEX pool prices for long-tail tokens addressable on-chain | Requires pool address resolution (extra step), pool prices not symbol prices |
+| `pyth` | Sub-second oracle prices for ~400 feeds (crypto + equities + FX + metals) | Limited symbol coverage; needs the catalog to map names |
+
+### Why HL is the canonical free-tier fallback
+
+HL's `/info` endpoint is keyless, has no rate limit at typical reading volume, and serves marks + candles for ~230 major and mid-cap tokens that overlap nearly all of CoinGecko's "interesting" universe. The 70-coin difference (CG has ~14k, HL has ~230) is almost entirely long-tail alts that aren't worth quoting outside DEX pool contexts anyway.
+
+## Diagnostics: `tckr.health()`
+
+Every HTTP call updates a per-provider rolling summary. Read it to see which sources are currently rate-limited or down:
+
+```python
+import tckr
+print(tckr.health())
+# {
+#   "coingecko":   {"ok_count": 14, "fail_count": 3, "last_status": 429,
+#                   "last_error": "...", "last_ts": "...", "last_429_ts": "..."},
+#   "hyperliquid": {"ok_count": 22, "fail_count": 0, "last_status": 200, ...},
+# }
+```
+
+Exposed as an agent tool too (`health`) — useful when an agent is reasoning about why data looks thin ("CoinGecko is rate-limited right now → I'm seeing HL fallback prices in my context").
 
 ## Configuration
 

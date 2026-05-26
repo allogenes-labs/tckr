@@ -1,4 +1,4 @@
-"""Hyperliquid info API — perps marks, funding, open interest, order books.
+"""Hyperliquid info API — perps marks, funding, open interest, order books, candles.
 
 Free, no API key. Single POST /info endpoint with a {"type": ...} payload.
 This module exposes the market-data subset (no user/account queries).
@@ -8,6 +8,16 @@ Conventions:
 - Upstream numbers are strings; parsers cast to float.
 - Funding rate is per-hour (Hyperliquid charges hourly). `funding_apr_pct` is
   the linear-annualization convenience field.
+
+Failure modes & coverage:
+- Coverage is the ~230 tokens listed as perps — majors + most active mid-caps.
+  Long-tail alts (a token that only has a DEX pool) are NOT here; route those
+  to `geckoterminal.pool_ohlcv` instead.
+- No observed rate limit at typical reading volume (10-30 req/sec is fine).
+  HL is the canonical free-tier fallback when CoinGecko is 429-ing — both
+  `tckr.quotes` and `tckr.history` cascade through HL when CG fails.
+- Unknown symbol on `candleSnapshot` returns HTTP 500 (not 404). Our wrapper
+  treats both the same: callers get None.
 
 Docs: https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/info-endpoint
 """
@@ -161,6 +171,91 @@ async def funding_history(symbol: str, *, hours: int = 24) -> list[dict]:
     rows.sort(key=lambda x: x["t"] or "")
     _cache.put(ck, rows)
     return rows
+
+
+_INTERVAL_MS = {
+    "1m":  60_000,         "3m":  180_000,        "5m":  300_000,
+    "15m": 900_000,        "30m": 1_800_000,
+    "1h":  3_600_000,      "2h":  7_200_000,      "4h":  14_400_000,
+    "8h":  28_800_000,     "12h": 43_200_000,
+    "1d":  86_400_000,     "3d":  259_200_000,    "1w":  604_800_000,    "1M": 2_592_000_000,
+}
+
+
+async def candles(
+    symbol: str,
+    *,
+    interval: str = "1d",
+    limit: int = 30,
+    start_ms: int | None = None,
+    end_ms: int | None = None,
+) -> dict | None:
+    """Hyperliquid candle history for `symbol`.
+
+    Wraps the `/info` `candleSnapshot` payload. Returns a dict shaped to match
+    `geckoterminal.pool_ohlcv` so cascade callers can swap between sources:
+
+        {"symbol": "BTC", "interval": "1d", "candles": [
+            {"t": "2026-04-26T00:00:00+00:00",
+             "o": 66231.0, "h": 67120.0, "l": 65890.5, "c": 67005.0, "v": 18234.4},
+            ...
+        ]}
+
+    `interval`: one of {1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 8h, 12h, 1d, 3d, 1w, 1M}.
+    `limit`: number of candles to ask for (counted back from `end_ms`); ignored
+             if both `start_ms` and `end_ms` are supplied.
+
+    No auth, no observed rate limit at typical reading volume. The series is
+    chronological (oldest → newest). Returns None on HTTP failure; empty
+    candle list when the symbol is unknown to HL.
+    """
+    sym = (symbol or "").strip().upper()
+    if not sym:
+        return None
+    interval = (interval or "1d").strip()
+    if interval not in _INTERVAL_MS:
+        log.warning("hyperliquid candles: unsupported interval %r", interval)
+        return None
+    ms_per = _INTERVAL_MS[interval]
+    if end_ms is None:
+        end_ms = _now_ms()
+    if start_ms is None:
+        # +1 buffer candle so we don't drop the most recent one on partial bar.
+        start_ms = end_ms - (max(1, int(limit)) + 1) * ms_per
+
+    ck = ("candles", sym, interval, int(start_ms), int(end_ms))
+    cached = _cache.get(ck, settings.PERPS_TTL_S)
+    if cached is not None:
+        return cached
+
+    body = await _info({
+        "type": "candleSnapshot",
+        "req": {"coin": sym, "interval": interval,
+                "startTime": int(start_ms), "endTime": int(end_ms)},
+    }, label=f"hyperliquid candleSnapshot {sym} {interval}")
+    if not isinstance(body, list):
+        return None
+
+    rows: list[dict] = []
+    for r in body:
+        if not isinstance(r, dict):
+            continue
+        t_iso = _ms_to_iso(r.get("t"))
+        if t_iso is None:
+            continue
+        rows.append({
+            "t": t_iso,
+            "o": _f(r.get("o")),
+            "h": _f(r.get("h")),
+            "l": _f(r.get("l")),
+            "c": _f(r.get("c")),
+            "v": _f(r.get("v")),
+        })
+    rows.sort(key=lambda x: x["t"])  # ensure chronological
+
+    out = {"symbol": sym, "interval": interval, "candles": rows}
+    _cache.put(ck, out)
+    return out
 
 
 async def l2_book(symbol: str, *, depth: int = 5) -> dict | None:

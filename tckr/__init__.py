@@ -4,7 +4,7 @@ Import source modules directly:
 
     geckoterminal   DEX pools, tokens by address, OHLCV (Base, Solana, …)
     dexscreener     DEX pairs, search, new-pair discovery, paid-boost rankings
-    hyperliquid     perps: funding, open interest, marks (single-exchange)
+    hyperliquid     perps: funding, open interest, marks, candle history
     coinalyze       perps cross-exchange: funding spread, OI, liquidations
     defillama       chain/protocol TVL, DEX volume, stablecoins, yields
     goplus          EVM token contract security scans (honeypot, taxes, holders)
@@ -29,10 +29,24 @@ Import source modules directly:
     tokenterminal   protocol fundamentals (revenue, P/E, treasury)
     thegraph        GraphQL access to indexed subgraphs (Uniswap, Aave, ...)
 
+Unified cascades (best-effort across providers):
+
+    quotes          USD spot price cascade: CoinGecko → Hyperliquid
+    history         daily candle cascade:   CoinGecko market_chart → HL candleSnapshot
+
+Use the cascades when you want "best available" data without choosing a
+provider. They carry a `source` field on each result so the caller can tell
+which upstream answered.
+
 Every network call is async, cached (tckr.cache.TTLCache), and degrades
 gracefully — it returns None / [] rather than raising when an upstream fails.
 Modules that need an API key log a warning and return empty when the key is
 absent rather than crashing the caller.
+
+Per-provider health: `tckr.health()` returns a rolling summary (ok_count,
+fail_count, last_status, last_error, last_429_ts) for every provider the
+process has touched. Useful when an agent is reasoning about why data looks
+thin ("CoinGecko is rate-limited right now → HL fallback is doing the work").
 
 Capability registry: `tckr.registry` tracks per-module tier and which
 env vars unlock each. `capabilities()` returns the live state as JSON; the CLI
@@ -47,8 +61,9 @@ MCP client), `tckr[agent-openai]` for OpenAI function-calling, or
 """
 from __future__ import annotations
 
+from tckr._http import health  # re-exported for convenience
 from tckr.registry import capabilities  # re-exported for convenience
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
-__all__ = ["capabilities", "__version__"]
+__all__ = ["capabilities", "health", "__version__"]

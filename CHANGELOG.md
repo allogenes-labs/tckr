@@ -6,11 +6,57 @@ All notable changes to `tckr` are documented here. Format roughly follows
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-05-26
+
 ### Added
+- **`hyperliquid.candles(symbol, interval, limit)`** — wraps HL's
+  `candleSnapshot` info payload. Returns `{symbol, interval, candles: [{t,o,h,l,c,v}, ...]}`
+  chronological, matching `geckoterminal.pool_ohlcv`'s shape. Intervals from
+  `1m` to `1M`. No auth, no observed rate limit at typical reading volume.
+- **`tckr.quotes`** — unified USD price cascade. `quotes.get(symbols)` tries
+  CoinGecko `simple_price` first, falls through to Hyperliquid `perp` marks
+  on miss / rate-limit. Each result carries `source` so callers can detect
+  fallback. `quotes.get_one(symbol)` for single-symbol convenience.
+- **`tckr.history`** — unified daily candle cascade. `history.candles(symbols, days)`
+  tries CoinGecko `market_chart` first, falls through to `hyperliquid.candles`
+  on miss / rate-limit. Same `source` convention.
+- **`tckr.health()`** — per-provider HTTP health snapshot (ok/fail counts,
+  last status, last error, last-429 timestamp). Instrumented at the `_http`
+  layer, so every provider is covered automatically. Useful for diagnosing
+  "why is my data thin" and for agents reasoning about degraded mode.
+- **Agent toolkit additions**: `hl_candles`, `quote` (cascade), `candles`
+  (cascade), `health` — four new MCP tools. The cascade tools let agents
+  skip the provider-routing decision; the health tool surfaces upstream state.
 - Capability / tier registry (`tckr.registry`): per-module tier
   (`keyless-free` / `keyed-free` / `keyed-paid`), required env vars, and an
   `is_configured()` check. Drives MCP tool descriptions, CLI status, and the
   `capabilities` introspection tool.
+
+### Added — CLI
+- **PyPI update check in `tckr status`** — soft, opt-out check against PyPI
+  for a newer version of `tckr`. Disk-cached for 24h; uses stdlib urllib (no
+  extra deps); fails silently offline. Set `TCKR_NO_UPDATE_CHECK=1` to skip.
+
+### Fixed
+- **`history.candles` returned hours, not days, for `days < 91`.** CoinGecko's
+  free tier returns hourly granularity for sub-90-day windows; the previous
+  code sliced the last N hourly points thinking they were daily. Now
+  downsamples to one close per UTC date before slicing, so `days=30` really
+  returns 30 daily closes regardless of CG tier.
+- **`_http._provider_of` bucketed unlabelled calls under their full URL.**
+  Modules that omit the `label=` kwarg (a handful of older fetchers) caused
+  `health()` to show keys like `https://api.dexscreener.com/...` instead of
+  `dexscreener`. Now extracts the second-level hostname for URL fallbacks.
+- **`quotes._hl_price` would swap a legitimate 0.0 mark for the mid via
+  `or`-fallback.** Now uses an explicit `is not None` check. (Extremely rare
+  edge state, but technically wrong.)
+
+### Documentation
+- README: new "Fallback cascade" section explaining when to use `tckr.quotes`
+  / `tckr.history` vs. direct provider modules; per-provider failure-mode
+  table; rationale for HL as the canonical free-tier fallback.
+- Module docstrings: `coingecko` and `hyperliquid` now flag failure modes
+  (CG free-tier 429s, HL coverage limited to ~230 perp-listed tokens).
 - Agent toolkit (`tckr.agent_toolkit`) — extracted from the
   Market-Research-Comp sibling project and refactored into a platform-neutral
   core + per-platform adapters:

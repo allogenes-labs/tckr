@@ -66,7 +66,8 @@ REGISTRY: dict[str, ModuleSpec] = {
     ),
     "hyperliquid": ModuleSpec(
         "hyperliquid", Tier.KEYLESS_FREE,
-        notes="Single-exchange perps: funding, OI, marks.",
+        notes="Single-exchange perps: funding, OI, marks, candle history. "
+              "Canonical free-tier fallback when CoinGecko is rate-limited.",
     ),
     "defillama": ModuleSpec(
         "defillama", Tier.KEYLESS_FREE,

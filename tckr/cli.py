@@ -16,9 +16,92 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
+import os
 import sys
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 from tckr import settings
+
+# --------------------------- update check ---------------------------
+#
+# A soft, opt-out PyPI version check shown at the top of `tckr status`.
+# Uses stdlib urllib (so it doesn't import httpx for CLI-only users) and
+# caches the result on disk for 24h so we don't hit PyPI on every invocation.
+# Set TCKR_NO_UPDATE_CHECK=1 to disable.
+
+_UPDATE_CACHE_FILE = Path.home() / ".cache" / "tckr" / "version_check.json"
+_UPDATE_CACHE_TTL = timedelta(hours=24)
+_UPDATE_FETCH_TIMEOUT_S = 2.0
+
+
+def _parse_version(v: str) -> tuple[int, ...]:
+    """Loose semver parse — enough to compare numeric MAJOR.MINOR.PATCH.
+    Non-numeric suffixes (rc1, dev, post1) are stripped per-segment."""
+    parts: list[int] = []
+    for seg in (v or "").split("."):
+        num = ""
+        for ch in seg:
+            if ch.isdigit():
+                num += ch
+            else:
+                break
+        parts.append(int(num) if num else 0)
+    return tuple(parts)
+
+
+def _fetch_latest_pypi_version() -> str | None:
+    import urllib.request
+
+    from tckr import __version__
+    req = urllib.request.Request(
+        "https://pypi.org/pypi/tckr/json",
+        headers={"User-Agent": f"tckr/{__version__}"},
+    )
+    with urllib.request.urlopen(req, timeout=_UPDATE_FETCH_TIMEOUT_S) as resp:  # noqa: S310
+        data = json.loads(resp.read())
+    return (data.get("info") or {}).get("version")
+
+
+def _check_for_update() -> str | None:
+    """Return the latest PyPI version of `tckr` if newer than installed,
+    else None. Soft-fails on any error (offline, PyPI down, parse error)."""
+    if os.environ.get("TCKR_NO_UPDATE_CHECK"):
+        return None
+    from tckr import __version__
+
+    # Try the 24h disk cache first.
+    try:
+        if _UPDATE_CACHE_FILE.exists():
+            cached = json.loads(_UPDATE_CACHE_FILE.read_text())
+            ts = datetime.fromisoformat(cached.get("ts", ""))
+            if datetime.now(UTC) - ts < _UPDATE_CACHE_TTL:
+                latest = cached.get("latest")
+                if latest and _parse_version(latest) > _parse_version(__version__):
+                    return latest
+                return None
+    except (OSError, ValueError, KeyError, json.JSONDecodeError):
+        pass  # cache unreadable — refetch
+
+    try:
+        latest = _fetch_latest_pypi_version()
+    except Exception:  # noqa: BLE001 — never let an update check crash the CLI
+        return None
+    if not latest:
+        return None
+
+    try:
+        _UPDATE_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _UPDATE_CACHE_FILE.write_text(json.dumps({
+            "ts": datetime.now(UTC).isoformat(),
+            "latest": latest,
+        }))
+    except OSError:
+        pass  # cache write best-effort
+
+    return latest if _parse_version(latest) > _parse_version(__version__) else None
+
 
 # --------------------------- formatters ---------------------------
 
@@ -184,12 +267,15 @@ async def cmd_wallet(args) -> None:
 
 
 async def cmd_status(args) -> None:
-    from tckr import registry
+    from tckr import __version__, registry
     if args.json:
-        import json
         print(json.dumps(registry.capabilities(), indent=2))
-    else:
-        print(registry.format_status())
+        return
+    latest = _check_for_update()
+    if latest:
+        print(f"→ tckr {latest} is available (you have {__version__}) — "
+              f"`pip install -U tckr`\n")
+    print(registry.format_status())
 
 
 # --------------------------- parser ---------------------------

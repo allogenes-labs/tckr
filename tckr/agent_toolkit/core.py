@@ -195,6 +195,105 @@ async def _t_hl_orderbook(args: dict):
     return await hl.l2_book(args["symbol"], depth=depth)
 
 
+@register_tool(
+    "hl_candles",
+    "OHLCV candle history for a Hyperliquid perp. Returns "
+    "{symbol, interval, candles: [{t, o, h, l, c, v}, ...]} chronological. "
+    "interval ∈ {1m,5m,15m,30m,1h,4h,1d,1w}. Lighter than full charting — use "
+    "for short technical reads (recent breakouts, 14-day momentum).",
+    module="hyperliquid",
+    schema={
+        "type": "object",
+        "properties": {
+            "symbol":   {"type": "string", "description": "Perp coin name, e.g. BTC, ETH, HYPE"},
+            "interval": {"type": "string", "description": "Candle interval (default 1d)", "default": "1d"},
+            "limit":    {"type": "integer", "description": "Number of candles back from now (default 30, max 500)", "default": 30},
+        },
+        "required": ["symbol"],
+    },
+)
+async def _t_hl_candles(args: dict):
+    from tckr import hyperliquid as hl
+    limit = max(1, min(int(args.get("limit", 30)), 500))
+    interval = args.get("interval") or "1d"
+    return await hl.candles(args["symbol"], interval=interval, limit=limit)
+
+
+# ============================================================================
+# Unified cascade tools — best-effort price/history across providers
+# ============================================================================
+
+@register_tool(
+    "quote",
+    "Best-effort USD spot price for one or more symbols, cascading "
+    "CoinGecko → Hyperliquid so a rate-limited CG falls through to HL marks. "
+    "Prefer this over `cg_simple_price` or `hl_perp` when you only need a price "
+    "and don't care which source answers. Returns {symbol: {symbol, price, "
+    "source, ts}}; unresolvable symbols absent.",
+    module="",  # cascade — not tied to a single registry module
+    schema={
+        "type": "object",
+        "properties": {
+            "symbols": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of upper-case ticker symbols, e.g. ['BTC','ETH','NEAR']",
+            },
+        },
+        "required": ["symbols"],
+    },
+)
+async def _t_quote(args: dict) -> dict:
+    from tckr import quotes
+    symbols = args.get("symbols") or []
+    if isinstance(symbols, str):
+        symbols = [symbols]
+    return await quotes.get(symbols)
+
+
+@register_tool(
+    "candles",
+    "Best-effort daily candle history for one or more symbols, cascading "
+    "CoinGecko `market_chart` → Hyperliquid `candles`. Prefer this when you "
+    "just want closes + volumes and don't care which source answers. Returns "
+    "{symbol: {symbol, interval, closes, volumes, source}}; symbols no source "
+    "could resolve are absent. Volume scale depends on source — check `source`.",
+    module="",
+    schema={
+        "type": "object",
+        "properties": {
+            "symbols": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of upper-case symbols",
+            },
+            "days": {"type": "integer", "description": "Lookback in days (default 30, max 365)", "default": 30},
+        },
+        "required": ["symbols"],
+    },
+)
+async def _t_candles(args: dict) -> dict:
+    from tckr import history
+    symbols = args.get("symbols") or []
+    if isinstance(symbols, str):
+        symbols = [symbols]
+    days = max(1, min(int(args.get("days", 30)), 365))
+    return await history.candles(symbols, days=days)
+
+
+@register_tool(
+    "health",
+    "Per-provider HTTP health snapshot — counts, last status code, last error, "
+    "and last rate-limit timestamp. Useful to diagnose 'why is my data thin' "
+    "(e.g., CoinGecko 429s right now → expect HL fallback to be doing the work).",
+    module="",
+    schema={"type": "object", "properties": {}},
+)
+async def _t_health(args: dict) -> dict:
+    import tckr
+    return tckr.health()
+
+
 # ============================================================================
 # DefiLlama: TVL, DEX volume, yields
 # ============================================================================

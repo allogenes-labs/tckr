@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -25,6 +26,70 @@ from tckr import settings
 log = logging.getLogger("tckr.http")
 
 _RETRY_STATUS = {429, 500, 502, 503, 504}
+
+
+# ---------------------------------------------------------------------------
+# Per-provider health tracking.
+#
+# Every HTTP call has a `label` like "coingecko market_chart bitcoin" or
+# "hyperliquid candleSnapshot BTC 1d". We bucket by the FIRST whitespace-
+# separated token (the provider name) and keep a tiny rolling summary:
+# success count, failure count, last status code, last error message, last
+# timestamp, and a flag for whether the last call was rate-limited (429).
+#
+# `tckr.health()` re-exports this so consumers can show a degraded-mode
+# banner ("CoinGecko rate-limited 30s ago — falling back to Hyperliquid")
+# or drive smarter routing decisions.
+# ---------------------------------------------------------------------------
+
+_health: dict[str, dict] = {}
+
+
+def _provider_of(label: str) -> str:
+    """Bucket key for the health table. Labels like "coingecko market_chart …"
+    map to "coingecko"; raw URLs (no label) get their second-level hostname
+    so health() shows "dexscreener" instead of the whole URL string."""
+    if not label:
+        return "_unknown"
+    first = label.split(" ", 1)[0]
+    if first.startswith(("http://", "https://")):
+        try:
+            host = first.split("://", 1)[1].split("/", 1)[0]
+            parts = host.split(".")
+            if len(parts) >= 2:
+                # api.dexscreener.com -> dexscreener; pro-api.coingecko.com -> coingecko
+                return parts[-2]
+            return host
+        except IndexError:
+            return first
+    return first
+
+
+def _record(label: str, *, status: int | None = None,
+            ok: bool = False, error: str | None = None) -> None:
+    p = _provider_of(label)
+    row = _health.setdefault(p, {
+        "ok_count": 0, "fail_count": 0,
+        "last_status": None, "last_error": None,
+        "last_ts": None, "last_429_ts": None,
+    })
+    row["last_status"] = status
+    row["last_ts"] = datetime.now(UTC).isoformat()
+    if ok:
+        row["ok_count"] += 1
+        row["last_error"] = None
+    else:
+        row["fail_count"] += 1
+        row["last_error"] = (error or "")[:200] or (f"http {status}" if status else "unknown")
+        if status == 429:
+            row["last_429_ts"] = row["last_ts"]
+
+
+def health() -> dict:
+    """Snapshot of per-provider HTTP health: counts, last status, last error,
+    and last-rate-limit timestamp. Keys are provider names extracted from the
+    call labels ("coingecko", "hyperliquid", "geckoterminal", ...)."""
+    return {k: dict(v) for k, v in _health.items()}
 
 
 async def _request(
@@ -48,11 +113,13 @@ async def _request(
                 r = await client.request(method, url, params=params,
                                          headers=headers, json=json)
                 if r.status_code == 200:
+                    _record(tag, status=200, ok=True)
                     return r.json()
                 if r.status_code in _RETRY_STATUS and attempt < settings.HTTP_MAX_RETRIES:
                     await asyncio.sleep(0.5 * (attempt + 1))
                     continue
                 log.warning("%s -> http %d: %s", tag, r.status_code, r.text[:200])
+                _record(tag, status=r.status_code, error=r.text[:200])
                 return None
             except (httpx.TimeoutException, httpx.TransportError) as e:
                 last_exc = e
@@ -61,8 +128,10 @@ async def _request(
                     continue
             except Exception as e:  # noqa: BLE001 — never let a fetch crash a caller
                 log.warning("%s -> unexpected %s: %s", tag, type(e).__name__, e)
+                _record(tag, error=f"{type(e).__name__}: {e}")
                 return None
     log.warning("%s -> giving up after retries: %s", tag, last_exc)
+    _record(tag, error=f"retry-exhausted: {last_exc}")
     return None
 
 

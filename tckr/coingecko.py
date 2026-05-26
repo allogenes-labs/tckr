@@ -13,6 +13,15 @@ Three tier paths, picked automatically:
 - **Pro key** (`COINGECKO_API_KEY`) — `pro-api.coingecko.com`, 500 req/min+,
   unlocks several Pro-only endpoints. Paid.
 
+Known failure modes:
+- **Free-tier 429s are common and aggressive.** `market_chart` (history) and
+  `simple_price` are the first to rate-limit when an app polls hot. If you
+  need resilience without paying, use the `tckr.quotes` / `tckr.history`
+  cascade modules — they fall through to Hyperliquid candles/marks for the
+  major-and-mid-cap subset that overlaps coverage.
+- Symbol-to-id lookup (`coin_id_from_symbol`) uses `/search`, which is rate-
+  limited the same way. Cache aggressively at the caller side if you can.
+
 Endpoints wrapped:
 - `simple_price(ids, vs_currencies)` — fast multi-coin spot
 - `coin_markets(vs_currency, ids|category|order)` — top-N with full market data
