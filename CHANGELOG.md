@@ -6,6 +6,16 @@ All notable changes to `tckr` are documented here. Format roughly follows
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-05-26
+
+### Added — CLI
+- **`tckr update`** — upgrade tckr to the latest PyPI release in one step.
+  Detects pipx / uv-tool / PEP 668 system-managed installs and prints the
+  right command instead of failing. `--check` flag does a dry-run (just
+  reports whether a newer version exists). Always honors explicit invocation
+  even when `TCKR_NO_UPDATE_CHECK` is set (that env var silences the implicit
+  status-banner check, not user-initiated commands).
+
 ## [0.2.0] — 2026-05-26
 
 ### Added

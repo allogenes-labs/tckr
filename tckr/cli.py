@@ -11,6 +11,7 @@ Commands (`tckr <cmd> --help` for details):
     tvl     DefiLlama chain TVL (one chain + protocols, or top by TVL)
     wallet  on-chain wallet holdings (Base, Ethereum, or Solana)
     status  show which modules are configured + their tier
+    update  upgrade tckr to the latest PyPI release (--check to dry-run)
 """
 from __future__ import annotations
 
@@ -101,6 +102,141 @@ def _check_for_update() -> str | None:
         pass  # cache write best-effort
 
     return latest if _parse_version(latest) > _parse_version(__version__) else None
+
+
+def _detect_install_method() -> tuple[str, str | None]:
+    """Best-effort guess at how tckr was installed.
+
+    Returns `(method, suggested_command)`. `method` ∈ {"pip", "pipx", "uv",
+    "conda", "system"}. `suggested_command` is set when the user should use
+    a non-pip tool, or None to mean "pip is fine".
+    """
+    exe = sys.executable.replace("\\", "/").lower()
+    env = os.environ
+
+    # pipx installs each app in ~/.local/pipx/venvs/<pkg>/  (or %LOCALAPPDATA%\pipx\venvs\<pkg>\)
+    if "/pipx/venvs/tckr/" in exe:
+        return "pipx", "pipx upgrade tckr"
+
+    # uv tool installs land under uv-owned dirs
+    if "/uv/tools/tckr/" in exe or "uv-tool" in exe:
+        return "uv", "uv tool upgrade tckr"
+
+    # Conda env — pip-in-conda still works, just warn rather than block
+    cp = env.get("CONDA_PREFIX")
+    if cp and sys.executable.startswith(cp):
+        return "conda", None
+
+    # PEP 668 externally-managed marker — usually means system Python on
+    # Debian/Ubuntu/Fedora/etc. pip will refuse without --user or --break-system-packages.
+    try:
+        import sysconfig
+        marker = Path(sysconfig.get_paths()["stdlib"]).parent / "EXTERNALLY-MANAGED"
+        if marker.exists():
+            return "system", f"{sys.executable} -m pip install --user --upgrade tckr"
+    except (KeyError, OSError):
+        pass
+
+    return "pip", None
+
+
+def _do_pip_upgrade() -> tuple[int, str]:
+    """Run `pip install -U tckr` in the current interpreter. Streams pip's
+    output to the user's terminal so they see progress. Returns (returncode,
+    captured_stderr). Captures stderr in addition to streaming so we can
+    suggest a fix for known failure modes like PEP 668."""
+    import subprocess
+    cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "tckr"]
+    # Stream stdout for progress; capture stderr both ways (tee-like) so the
+    # user sees errors AND we can pattern-match them. subprocess can't natively
+    # tee, so we capture and replay.
+    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    if proc.stdout:
+        print(proc.stdout, end="")
+    if proc.stderr:
+        print(proc.stderr, end="", file=sys.stderr)
+    return proc.returncode, (proc.stderr or "")
+
+
+async def cmd_update(args) -> None:
+    from tckr import __version__
+
+    # Always do a fresh fetch on explicit `tckr update` — the user asked.
+    # We deliberately do NOT honor TCKR_NO_UPDATE_CHECK here; that env var
+    # silences the implicit banner in `tckr status`, not explicit commands.
+    try:
+        latest = _fetch_latest_pypi_version()
+    except Exception:  # noqa: BLE001
+        print("error: could not reach PyPI to check for updates "
+              "(offline, or pypi.org is unreachable)", file=sys.stderr)
+        sys.exit(1)
+
+    if not latest:
+        print("error: PyPI returned no version for tckr", file=sys.stderr)
+        sys.exit(1)
+
+    is_newer = _parse_version(latest) > _parse_version(__version__)
+    if not is_newer:
+        print(f"tckr {__version__} is already up to date "
+              f"(latest on PyPI: {latest}).")
+        return
+
+    if args.check:
+        print(f"tckr {latest} is available (you have {__version__}). "
+              f"Run `tckr update` to install.")
+        return
+
+    method, suggested = _detect_install_method()
+    if method == "pipx":
+        print("tckr was installed via pipx. Run:")
+        print(f"  {suggested}")
+        return
+    if method == "uv":
+        print("tckr was installed via `uv tool`. Run:")
+        print(f"  {suggested}")
+        return
+    if method == "system":
+        print("tckr is installed in a system-managed Python (PEP 668). "
+              "pip will refuse a global upgrade.")
+        print("Recommended (one of):")
+        print("  pipx install --force tckr      # if you have pipx")
+        print(f"  {sys.executable} -m pip install --user --upgrade tckr")
+        return
+    if method == "conda":
+        print("note: detected a conda env. Trying pip — if it conflicts, "
+              "use `conda update tckr` instead.")
+
+    print(f"upgrading tckr {__version__} -> {latest}...\n")
+    rc, stderr = _do_pip_upgrade()
+    print()
+
+    if rc == 0:
+        # Invalidate the banner cache so a fresh `tckr status` doesn't keep
+        # nagging about an update the user just installed.
+        try:
+            _UPDATE_CACHE_FILE.unlink()
+        except OSError:
+            pass
+        print(f"upgraded to tckr {latest}.")
+        return
+
+    # pip failed — translate the most common errors into actionable hints.
+    stderr_lower = stderr.lower()
+    print(f"error: pip exited with code {rc}.", file=sys.stderr)
+    if "externally-managed-environment" in stderr_lower or "pep 668" in stderr_lower:
+        print("This Python is system-managed. Try:", file=sys.stderr)
+        print("  pipx install --force tckr", file=sys.stderr)
+        print(f"  {sys.executable} -m pip install --user --upgrade tckr",
+              file=sys.stderr)
+    elif "permission denied" in stderr_lower or "errno 13" in stderr_lower:
+        print("Permission denied. Try a user-site install:", file=sys.stderr)
+        print(f"  {sys.executable} -m pip install --user --upgrade tckr",
+              file=sys.stderr)
+    elif "no matching distribution" in stderr_lower:
+        print(f"PyPI did not have a matching distribution for your Python "
+              f"({sys.version_info.major}.{sys.version_info.minor}). "
+              f"tckr requires Python 3.11+.", file=sys.stderr)
+    sys.exit(1)
 
 
 # --------------------------- formatters ---------------------------
@@ -317,6 +453,10 @@ def _build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--json", action="store_true",
                      help="emit JSON instead of the human-readable table")
 
+    sp = sub.add_parser("update", help="upgrade tckr to the latest PyPI release")
+    sp.add_argument("--check", action="store_true",
+                     help="only check whether a newer version exists; don't install")
+
     return p
 
 
@@ -330,6 +470,7 @@ def main(argv=None) -> int:
         "tvl":    cmd_tvl,
         "wallet": cmd_wallet,
         "status": cmd_status,
+        "update": cmd_update,
     }
     try:
         asyncio.run(handlers[args.cmd](args))
