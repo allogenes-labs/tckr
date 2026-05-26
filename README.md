@@ -4,9 +4,9 @@
 [![CI](https://github.com/allogenes-labs/tckr/actions/workflows/ci.yml/badge.svg)](https://github.com/allogenes-labs/tckr/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**One pip install, 26 crypto data sources, ready for agents.**
+**Free crypto data in one pip install. No keys required to start.**
 
-tckr stitches the major free crypto APIs — DEX pools, perps, TVL, on-chain wallets, contract safety, launchpads, MEV, social, prediction markets, oracles — into one async, typed Python interface. Every call is TTL-cached per source and returns `None` / `[]` rather than raising when an upstream fails or a key is missing, so a partial install still works. The same registry powers an agent toolkit for Claude, OpenAI, MCP, and LangChain.
+Building anything with crypto data usually means signing up for five APIs, writing the same retry loop five times, juggling rate limits, and watching it all break when one provider goes down. tckr collapses that into one Python package: 13 of the most-used sources work the moment you install it, and another 10 unlock with free signups. The same registry doubles as an agent toolkit for Claude, OpenAI, MCP, and LangChain — so if you're plugging crypto data into an LLM, it's one install away.
 
 ```bash
 pip install tckr              # data layer
@@ -14,16 +14,42 @@ pip install tckr[agent-mcp]   # + universal MCP server for any LLM
 pip install tckr[agent-all]   # + all four agent adapters
 ```
 
-## Works out of the box
+```python
+import asyncio
+from tckr import quotes
 
-13 sources are keyless. Try it:
+async def main():
+    print(await quotes.get(["BTC", "ETH", "SOL"]))
+    # {'BTC': {'price': 77150.0, 'source': 'coingecko', ...},
+    #  'ETH': {'price': 2890.4,  'source': 'coingecko', ...},
+    #  'SOL': {'price': 178.2,   'source': 'coingecko', ...}}
+
+asyncio.run(main())
+```
+
+No signup, no key, no rate-limit boilerplate. If CoinGecko 429s, the call quietly falls back to Hyperliquid.
+
+## What's in the box
+
+26 data sources, grouped by the corners of crypto people usually glue together by hand:
+
+- **Prices & oracles** — CoinGecko, Hyperliquid, Pyth
+- **DEX & on-chain** — GeckoTerminal, DexScreener, Alchemy (EVM), Helius (Solana)
+- **Perps** — Hyperliquid, Coinalyze (cross-exchange funding, OI, liquidations)
+- **Launchpads** — Pump.fun, Clanker, Virtuals
+- **Token safety** — GoPlus, Honeypot, LP-lock detection
+- **DeFi data** — DefiLlama (TVL, yields), Etherscan, The Graph
+- **Social & prediction** — LunarCrush, Neynar (Farcaster), Polymarket
+
+13 sources are keyless. 10 more unlock with free signups. 3 paid keys add deeper coverage. Modules without their key gracefully no-op, so a partial install still works — and `tckr status` tells you what's live right now.
+
+A second, fuller example:
 
 ```python
 import asyncio
 from tckr import quotes, geckoterminal, defillama
 
 async def main():
-    # USD prices for any symbol — falls back from CoinGecko to Hyperliquid on rate limits
     print(await quotes.get(["BTC", "ETH", "SOL", "HYPE"]))
 
     # Trending DEX pools on Base
@@ -35,8 +61,6 @@ async def main():
 
 asyncio.run(main())
 ```
-
-No keys, no rate-limit boilerplate, no provider routing.
 
 ## Wire it into agents
 
