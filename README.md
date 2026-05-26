@@ -4,54 +4,50 @@
 [![CI](https://github.com/allogenes-labs/tckr/actions/workflows/ci.yml/badge.svg)](https://github.com/allogenes-labs/tckr/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**An async, cached, gracefully-degrading aggregator over the major free crypto data APIs — plus an agent toolkit that exposes the data to any LLM platform.**
+**One pip install, 26 crypto data sources, ready for agents.**
 
-Stitches 26 sources (DEX pools, perps, TVL, on-chain wallets, contract safety, launchpads, MEV, social, prediction markets, oracles, ...) into one clean, typed Python interface. Every call is `async`, TTL-cached per source, and returns `None` / `[]` rather than raising when an upstream fails or a key is missing — so a partial install still works.
+tckr stitches the major free crypto APIs — DEX pools, perps, TVL, on-chain wallets, contract safety, launchpads, MEV, social, prediction markets, oracles — into one async, typed Python interface. Every call is TTL-cached per source and returns `None` / `[]` rather than raising when an upstream fails or a key is missing, so a partial install still works. The same registry powers an agent toolkit for Claude, OpenAI, MCP, and LangChain.
 
 ```bash
-pip install tckr              # data layer only
-pip install tckr[agent-mcp]   # + universal MCP stdio server for any LLM
+pip install tckr              # data layer
+pip install tckr[agent-mcp]   # + universal MCP server for any LLM
 pip install tckr[agent-all]   # + all four agent adapters
 ```
 
-## Quickstart
+## Works out of the box
 
-### As a data layer
+13 sources are keyless. Try it:
 
 ```python
 import asyncio
-from tckr import geckoterminal, coinalyze, coingecko
+from tckr import quotes, geckoterminal, defillama
 
 async def main():
-    # Spot prices via CoinGecko
-    px = await coingecko.simple_price("bitcoin,ethereum,solana")
-    print(px)  # {'bitcoin': {'usd': 67234.5}, ...}
+    # USD prices for any symbol — falls back from CoinGecko to Hyperliquid on rate limits
+    print(await quotes.get(["BTC", "ETH", "SOL", "HYPE"]))
 
     # Trending DEX pools on Base
-    pools = await geckoterminal.trending_pools("base", limit=5)
-    for p in pools:
+    for p in await geckoterminal.trending_pools("base", limit=5):
         print(p["name"], p["price_usd"], p["volume_24h_usd"])
 
-    # Cross-exchange perps funding spread (requires COINALYZE_API_KEY)
-    agg = await coinalyze.funding_aggregate("BTC")
-    if agg:
-        a = agg["aggregate"]
-        print(f"BTC funding APR: min {a['min_apr_pct']:.1f}% / "
-              f"max {a['max_apr_pct']:.1f}% / spread {a['spread_apr_pct']:.1f}%")
+    # Base chain TVL + top protocols
+    print(await defillama.chain("base"))
 
 asyncio.run(main())
 ```
 
-### As an agent toolkit
+No keys, no rate-limit boilerplate, no provider routing.
+
+## Wire it into agents
 
 Spawn the universal MCP server from any MCP-compatible client (Claude Desktop, Claude Code, Cline, Continue.dev, custom orchestrators):
 
 ```bash
 pip install tckr[agent-mcp]
-tckr-mcp        # listens on stdio for the MCP protocol
+tckr-mcp        # listens on stdio
 ```
 
-Or wire it into a specific platform:
+Or import the adapter for your platform:
 
 ```python
 # Claude Agent SDK
@@ -64,9 +60,7 @@ from tckr.agent_toolkit.adapters.openai import get_openai_tools, get_anthropic_t
 from tckr.agent_toolkit.adapters.langchain import get_langchain_tools
 ```
 
-All adapters serve the same 44 tools from one platform-neutral core. Each tool description carries a tier tag (`[keyless]`, `[keyed-free: needs X]`, `[paid: Y required]`) auto-injected from the capability registry, so the agent knows what will work in the current environment before it tries.
-
-There's also a `capabilities` introspection tool — agents can call it once to learn what's configured:
+All adapters serve the same 44 tools from one platform-neutral core. Each tool description auto-injects a tier tag (`[keyless]`, `[keyed-free: needs X]`, `[paid OK]`) from the capability registry, so the model knows what'll work before it tries. A `capabilities` introspection tool lets the agent self-discover the live state:
 
 ```python
 import tckr
@@ -74,11 +68,37 @@ print(tckr.capabilities()["summary"])
 # {'total': 26, 'configured': 14, 'by_tier': {'keyless-free': 13, 'keyed-free': 10, 'keyed-paid': 3}}
 ```
 
-Or from the shell:
+## Unlock more with free API keys
 
-```bash
-tckr status
-```
+Free signups, no credit cards. Ranked by what we actually use in production (Market-Research-Comp, the sibling agent project tckr was extracted from):
+
+| Key | What it unlocks | Sign up |
+|---|---|---|
+| `ALCHEMY_API_KEY` | EVM wallet balances + LP-lock detection on Base / ETH (2 modules) | [alchemy.com](https://alchemy.com) |
+| `HELIUS_API_KEY` | Solana RPC + Jito MEV intel + wallet PnL (3 modules) | [helius.dev](https://helius.dev) |
+| `COINALYZE_API_KEY` | Cross-exchange perps: funding spread, OI, liquidations (Binance / Bybit / OKX / HL) | [coinalyze.net](https://coinalyze.net) |
+| `BIRDEYE_API_KEY` | Solana token analytics, top holders, contract security | [birdeye.so](https://birdeye.so) |
+| `MORALIS_API_KEY` *or* `BITQUERY_API_KEY` | Pump.fun discovery (new / about-to-bond / graduated). Either one alone is sufficient | [moralis.io](https://moralis.io) / [bitquery.io](https://bitquery.io) |
+| `COINGECKO_DEMO_API_KEY` | Higher rate limit on the most-used price endpoint — free tier 429s under any real load | [coingecko.com](https://coingecko.com) |
+| `ETHERSCAN_API_KEY` | ~70 EVM chains via the unified V2 API (one key covers ETH, Base, Arb, Op, Polygon, BNB, …) | [etherscan.io](https://etherscan.io) |
+| `LUNARCRUSH_API_KEY` | Galaxy Score, AltRank, topic feeds, social sentiment | [lunarcrush.com](https://lunarcrush.com) |
+| `THEGRAPH_API_KEY` | Higher-quota subgraph access (Uniswap, Aave, etc.) — public gateway works keyless but throttles fast | [thegraph.com](https://thegraph.com) |
+
+**Tip:** Alchemy + Helius alone open up everything on-chain (EVM + Solana). Add Coinalyze if you care about perps; Birdeye if you focus on Solana memecoins.
+
+## Paid keys for deeper work
+
+These actually buy you something beyond rate-limit bumps:
+
+| Key | What you get |
+|---|---|
+| `NEYNAR_API_KEY` | Farcaster cast search, channel feeds, trending fungibles — keyless tier only has user lookup |
+| `COINGECKO_API_KEY` (Pro) | 500+ req/min plus Pro-only endpoints (top movers, NFT, full historical OHLC) |
+| `MESSARI_API_KEY` | Research-grade asset profiles + deep metrics — most useful endpoints moved paid in 2024 |
+| `TOKENTERMINAL_API_KEY` | Protocol fundamentals: revenue, fees, P/E, treasury, full historical series |
+| `SOLSCAN_API_KEY` (Pro) | Richer Solana transaction parsing, higher rate limit |
+
+All keys are optional. Modules without their key gracefully no-op (return `None` / `[]`); `tckr status` shows what's configured right now.
 
 ## Sources
 
@@ -105,13 +125,11 @@ tckr status
 | `lunarcrush` | keyed-free | `LUNARCRUSH_API_KEY` | Social sentiment: Galaxy Score, AltRank, topic feeds |
 | `lp_lock` | keyed-free | `ALCHEMY_API_KEY` | LP-lock detection: Uniswap V2 / V3 / V4 on Base / ETH |
 | `jito` | keyed-free | `HELIUS_API_KEY` | Solana MEV: tip floor, bundle status, snipe-score |
-| `pumpfun` | keyed-free | one of `MORALIS_API_KEY` / `BITQUERY_API_KEY` (+ `HELIUS_API_KEY` for state) | Pump.fun launchpad: discovery + bonding curve + analytics |
+| `pumpfun` | keyed-free | `MORALIS_API_KEY` *or* `BITQUERY_API_KEY` (+ `HELIUS_API_KEY` for state) | Pump.fun launchpad: discovery + bonding curve + analytics |
 | `wallet_pnl` | keyed-free | composite (Helius / Alchemy / Moralis / Birdeye) | FIFO PnL across Solana + Base wallets |
 | `neynar` | keyed-paid | `NEYNAR_API_KEY` | Farcaster cast search, channel feeds, trending |
 | `messari` | keyed-paid | `MESSARI_API_KEY` | Research-grade asset profiles, metrics, news |
 | `tokenterminal` | keyed-paid | `TOKENTERMINAL_API_KEY` | Protocol fundamentals: revenue, fees, P/E, treasury |
-
-Tiers: **keyless** = no signup required; **keyed-free** = free signup, key required; **keyed-paid** = useful endpoints require a paid plan (free tiers degrade gracefully).
 
 ## Composition
 
@@ -122,60 +140,52 @@ Sources are designed to chain. A few examples:
 - `clanker.new_tokens()[i]["pool_address"]` (V4 PoolId) → `lp_lock(pool_id)` — is the Clanker LP locked?
 - `pumpfun.top_traders(mint)` → `wallet_pnl(wallet)` — is the top buyer actually profitable across their other trades?
 
-## Fallback cascade: `tckr.quotes` and `tckr.history`
+## Fallback cascades: `tckr.quotes` and `tckr.history`
 
-Real-world consumers of "give me a price for X" or "give me 30 days of closes for X" usually want best-available data, not a particular provider. Two cascade modules wrap the common pattern so callers don't reimplement it:
+Real consumers usually want best-available data, not a specific provider. Two cascade modules wrap the common pattern so callers don't reimplement it:
 
 ```python
 from tckr import quotes, history
 
 # USD spot price, CoinGecko → Hyperliquid fallback
 q = await quotes.get(["BTC", "ETH", "NEAR", "HYPE"])
-# {'BTC': {'price': 77150.0, 'source': 'coingecko', ...}, 'HYPE': {'price': 63.6, 'source': 'hyperliquid', ...}, ...}
+# {'BTC': {'price': 77150.0, 'source': 'coingecko', ...}, 'HYPE': {'price': 63.6, 'source': 'hyperliquid', ...}}
 
 # 30-day daily candles, CoinGecko market_chart → Hyperliquid candleSnapshot
 h = await history.candles(["BTC", "HYPE"], days=30)
-# h["HYPE"]["source"] == "hyperliquid"  ← CG doesn't have HYPE (perp-only token)
 ```
 
-Each result carries a `source` field so callers can detect when fallback ran. The same cascades are exposed as agent tools (`quote`, `candles`) — agents calling those skip the provider-routing decision entirely.
+Each result carries a `source` field so callers can detect when fallback ran. The same cascades are exposed as agent tools (`quote`, `candles`).
 
-### Per-provider failure modes (what the cascade compensates for)
+Hyperliquid is the canonical free-tier fallback: keyless, no rate limit at typical reading volume, and covers ~230 majors + mid-caps — almost the entire CoinGecko "interesting" universe minus long-tail alts (which belong in DEX pool contexts anyway).
 
-| Provider | Strength | Failure mode |
-|---|---|---|
-| `coingecko` (free tier) | ~14k coins, market cap rank, categories, global stats | Hard 429s under load — `market_chart` is the most rate-limited endpoint |
-| `hyperliquid` | ~230 perps, deep funding/OI data, candle history, no observed rate limit | Coverage limited to perp-listed tokens (majors + mid-caps) |
-| `geckoterminal` | DEX pool prices for long-tail tokens addressable on-chain | Requires pool address resolution (extra step), pool prices not symbol prices |
-| `pyth` | Sub-second oracle prices for ~400 feeds (crypto + equities + FX + metals) | Limited symbol coverage; needs the catalog to map names |
-
-### Why HL is the canonical free-tier fallback
-
-HL's `/info` endpoint is keyless, has no rate limit at typical reading volume, and serves marks + candles for ~230 major and mid-cap tokens that overlap nearly all of CoinGecko's "interesting" universe. The 70-coin difference (CG has ~14k, HL has ~230) is almost entirely long-tail alts that aren't worth quoting outside DEX pool contexts anyway.
-
-## Diagnostics: `tckr.health()`
+## Diagnostics: `tckr.health()` and `tckr update`
 
 Every HTTP call updates a per-provider rolling summary. Read it to see which sources are currently rate-limited or down:
 
 ```python
 import tckr
 print(tckr.health())
-# {
-#   "coingecko":   {"ok_count": 14, "fail_count": 3, "last_status": 429,
-#                   "last_error": "...", "last_ts": "...", "last_429_ts": "..."},
-#   "hyperliquid": {"ok_count": 22, "fail_count": 0, "last_status": 200, ...},
-# }
+# {"coingecko":  {"ok_count": 14, "fail_count": 3, "last_status": 429, "last_429_ts": "..."},
+#  "hyperliquid": {"ok_count": 22, "fail_count": 0, "last_status": 200, ...}}
 ```
 
-Exposed as an agent tool too (`health`) — useful when an agent is reasoning about why data looks thin ("CoinGecko is rate-limited right now → I'm seeing HL fallback prices in my context").
+Exposed as an agent tool too (`health`) — useful when an agent is reasoning about why data looks thin.
+
+The CLI checks PyPI for new releases once a day and shows an upgrade banner in `tckr status`. To install:
+
+```bash
+tckr update              # one-step upgrade
+tckr update --check      # dry-run; just report if a new version exists
+```
+
+Detects pipx / `uv tool` / PEP 668 system-managed installs and suggests the right command instead of failing. Set `TCKR_NO_UPDATE_CHECK=1` to silence the implicit banner.
 
 ## Configuration
 
-All API keys are optional. Modules without a key still work in keyless mode (or skip if they require one). Set the keys for sources you want to use; `tckr status` (or `tckr.capabilities()`) shows what's configured.
+All API keys are optional. Set them as env vars (or via a `.env` file picked up by your shell); `tckr status` shows what's configured right now. Cache TTLs and HTTP behavior (timeouts, retries) are tunable via `TCKR_*` env vars — see [`tckr/settings.py`](tckr/settings.py).
 
-Cache TTLs and HTTP behavior (timeouts, retries) are tunable via `TCKR_*` env vars — see [`tckr/settings.py`](tckr/settings.py) for the full list of knobs.
-
-## Agent toolkit details
+## Agent toolkit adapters
 
 The agent toolkit (`tckr.agent_toolkit`) wraps each useful function as a read-only tool with a JSON Schema, then exposes the same registry through four adapters:
 
@@ -186,9 +196,7 @@ The agent toolkit (`tckr.agent_toolkit`) wraps each useful function as a read-on
 | `tckr[agent-openai]` | `adapters.openai` | OpenAI function-calling shapes (`get_openai_tools()`, also `get_anthropic_tools()`) + `execute_tool(name, args)` dispatcher. |
 | `tckr[agent-langchain]` | `adapters.langchain` | LangChain `StructuredTool` instances (`get_langchain_tools()`). |
 
-`tckr[agent]` is a convenience meta-extra installing the two most-used adapters (`agent-claude` + `agent-mcp`); `tckr[agent-all]` installs all four.
-
-A single `core.augment_description(spec)` function reads `tckr.registry.tier_tag(module)` and prepends the tier marker to each tool description, so every adapter shows the agent the same tier-aware metadata.
+`tckr[agent]` installs the two most-used adapters (`agent-claude` + `agent-mcp`); `tckr[agent-all]` installs all four.
 
 ## Contributing
 

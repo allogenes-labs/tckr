@@ -6,6 +6,16 @@ All notable changes to `tckr` are documented here. Format roughly follows
 
 ## [Unreleased]
 
+## [0.2.2] — 2026-05-26
+
+### Documentation
+- README rewritten around the new-user journey: punchier hook, zero-key
+  "works out of the box" example, agent-wiring section, and a ranked table
+  of free API keys ordered by actual production impact (Alchemy + Helius
+  first, then Coinalyze / Birdeye / Moralis-or-Bitquery for vertical depth).
+  Paid keys table now describes what each one *buys* you, not just rate
+  limits. Diagnostics + `tckr update` consolidated into one section.
+
 ## [0.2.1] — 2026-05-26
 
 ### Added — CLI

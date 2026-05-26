@@ -64,6 +64,6 @@ from __future__ import annotations
 from tckr._http import health  # re-exported for convenience
 from tckr.registry import capabilities  # re-exported for convenience
 
-__version__ = "0.2.1"
+__version__ = "0.2.2"
 
 __all__ = ["capabilities", "health", "__version__"]
