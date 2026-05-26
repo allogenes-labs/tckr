@@ -123,7 +123,7 @@ The registry typo-guard test (`tests/test_registry.py::test_registry_env_vars_ex
 
 ## Adding a new agent tool
 
-See the `add-agent-tool` skill (in the Market-Research-Comp project, but the pattern documented there now points at this package). TL;DR:
+The pattern for adding a new tool:
 
 1. Add an async function in `tckr/agent_toolkit/core.py` decorated with `@register_tool(name, description, module, schema)`.
 2. The `module` arg must be a key in `tckr/registry.py::REGISTRY` — drives the tier-tag prefix.

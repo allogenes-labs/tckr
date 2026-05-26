@@ -70,7 +70,7 @@ print(tckr.capabilities()["summary"])
 
 ## Unlock more with free API keys
 
-Free signups, no credit cards. Ranked by what we actually use in production (Market-Research-Comp, the sibling agent project tckr was extracted from):
+Free signups, no credit cards. Ranked by what we actually use in production:
 
 | Key | What it unlocks | Sign up |
 |---|---|---|

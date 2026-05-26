@@ -77,9 +77,9 @@ All notable changes to `tckr` are documented here. Format roughly follows
   table; rationale for HL as the canonical free-tier fallback.
 - Module docstrings: `coingecko` and `hyperliquid` now flag failure modes
   (CG free-tier 429s, HL coverage limited to ~230 perp-listed tokens).
-- Agent toolkit (`tckr.agent_toolkit`) — extracted from the
-  Market-Research-Comp sibling project and refactored into a platform-neutral
-  core + per-platform adapters:
+- Agent toolkit (`tckr.agent_toolkit`) — extracted from an internal
+  agent project and refactored into a platform-neutral core +
+  per-platform adapters:
   - `agent_toolkit.core` — 20+ tool functions and `ToolSpec` registry; no SDK deps.
   - `adapters/claude_sdk` — Claude Agent SDK in-process MCP server (`tckr[agent-claude]`).
   - `adapters/mcp_stdio` — universal MCP stdio server, console-script `tckr-mcp`
