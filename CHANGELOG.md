@@ -6,6 +6,48 @@ All notable changes to `tckr` are documented here. Format roughly follows
 
 ## [Unreleased]
 
+## [0.2.3] — 2026-05-27
+
+### Added
+- **`polymarket.market_status(slug)`** — settlement-loop primitive. Returns
+  one of `"alive"`, `"resolved_yes"`, `"resolved_no"`, `"ambiguous"`, or
+  `"ghost"` so callers can branch (settle on resolved, alert on ghost,
+  no-op on alive/ambiguous) without re-deriving the state from raw fields.
+- **`tckr.bankr`** — new keyless module for the Bankr launchpad feed
+  (Doppler on Base, Raydium on Solana). Public surface: `new_launches`,
+  `launch`, `launches_by_deployer`, `launches_by_x_user`. Carries
+  `x_username` + `x_profile_image_url` — the X-side analogue of
+  `clanker.requestor_fid` for cross-link with social-graph tools. Optional
+  `BANKR_API_KEY` unlocks speculative `resolve_address` + `search_users`
+  endpoints (wired but not yet validated against a live key).
+
+### Changed
+- **`polymarket.market(slug)` cascade hardened against rename + resolution.**
+  Three-step lookup: default `?slug=` → `?slug=&closed=true` (so resolved
+  markets stay findable) → `?condition_ids=<id>` via a persisted slug ↔
+  conditionId alias map. Catches the case where polymarket appends a
+  numeric disambiguator to a slug while the underlying conditionId stays
+  stable. Returned `slug` is relabeled to the requested slug so callers
+  keyed off the original keep resolving; `condition_id` carries the
+  canonical identifier. Numeric-id fallback now only fires for digit-only
+  inputs (previously spammed 422s on every ghost slug lookup).
+- **`tckr.quotes` / `tckr.history` cascade order flipped to Hyperliquid →
+  CoinGecko.** For the ~230 symbols HL covers, HL's live perp mark is
+  fresher than CG's spot and isn't subject to the free-tier 429 cliff —
+  previously CG-first was wasting requests on rate-limited majors when HL
+  could have answered. CG handles the long tail and backstops transient HL
+  misses.
+- **`tckr.history` volumes are now USD across both sources.** Hyperliquid
+  base-asset volume is multiplied by each bar's close, so `volume_last` /
+  `volume_avg_20d` are comparable across symbols even when the cascade
+  picks different sources per symbol. CoinGecko already returned USD.
+
+### Added — env vars
+- **`TCKR_POLYMARKET_ALIASES_PATH`** — optional path to a JSON file where
+  polymarket persists slug → conditionId aliases. Unset (default) keeps
+  the map in-process only; setting it lets the rename-recovery survive
+  process restarts and be seeded manually for known-stranded slugs.
+
 ## [0.2.2] — 2026-05-26
 
 ### Documentation

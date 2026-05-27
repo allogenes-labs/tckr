@@ -44,6 +44,8 @@ def test_every_data_source_module_in_registry():
         # Phase 5b sweep:
         "pyth", "etherscan", "solscan", "lunarcrush", "messari",
         "tokenterminal", "thegraph",
+        # Bankr launchpad integration:
+        "bankr",
     }
     actual = set(registry.REGISTRY.keys())
     missing = expected - actual

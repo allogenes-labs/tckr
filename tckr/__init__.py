@@ -16,6 +16,7 @@ Import source modules directly:
     lp_lock         LP-lock detection (Base / EVM) via known locker contracts
     virtuals        Virtuals Protocol AI-agent launchpad (Base, multi-chain)
     clanker         Clanker Farcaster-native token launcher (Base, multi-chain)
+    bankr           Bankr launchpad feed (Doppler/Base + Raydium/Solana); X social attribution
     jito            Solana MEV: tip floor, bundle status, snipe-score for txs
     alchemy         on-chain wallet balances + transfers
     helius          Solana RPC convenience layer
@@ -64,6 +65,6 @@ from __future__ import annotations
 from tckr._http import health  # re-exported for convenience
 from tckr.registry import capabilities  # re-exported for convenience
 
-__version__ = "0.2.2"
+__version__ = "0.2.3"
 
 __all__ = ["capabilities", "health", "__version__"]

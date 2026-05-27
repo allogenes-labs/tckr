@@ -6,9 +6,11 @@ currently rate-limited.
 
 Cascade order (per symbol):
 
-  1. CoinGecko `market_chart` — broadest coverage (resolves via
-     `coin_id_from_symbol`), but rate-limits hard on the free tier.
-  2. Hyperliquid `candles` — ~230 perps, cheap and rarely throttled.
+  1. Hyperliquid `candles` — preferred for the ~230 perps in HL's universe.
+     No rate limit, true daily OHLC, fresher than CG free-tier history.
+  2. CoinGecko `market_chart` — broadest coverage (resolves via
+     `coin_id_from_symbol`), used for long-tail symbols HL doesn't list
+     and as a backstop when HL returns nothing for a covered symbol.
 
 Returned shape per resolved symbol:
 
@@ -16,14 +18,14 @@ Returned shape per resolved symbol:
       "symbol":  "NEAR",
       "interval": "1d",
       "closes":  [2.51, 2.63, 2.71, ...],
-      "volumes": [18_234_000.0, ...],   # may be empty if source lacks volume
+      "volumes": [18_234_000.0, ...],   # USD; may be empty if source lacks volume
       "source":  "coingecko" | "hyperliquid",
     }
 
-Volumes carry whatever the source provides:
-  - CoinGecko returns USD total_volumes
-  - Hyperliquid returns base-asset volume (NOT USD)
-Inspect `source` if you need to interpret volume scale.
+Volume units are USD regardless of source: CoinGecko returns USD total_volumes
+directly; Hyperliquid base-asset volume is multiplied by the bar's close so
+the units line up. This means `volume_last`/`volume_avg_20d` are comparable
+across symbols even when the cascade picks different sources for each.
 """
 from __future__ import annotations
 
@@ -77,18 +79,37 @@ async def _hl_history(symbol: str, days: int) -> tuple[list[float], list[float]]
     r = await hl.candles(symbol, interval="1d", limit=days)
     if not r:
         return None
-    closes_all = [c.get("c") for c in r.get("candles") or [] if c.get("c") is not None]
-    vols_all = [c.get("v") or 0.0 for c in r.get("candles") or []]
+    rows = r.get("candles") or []
+    closes_all: list[float] = []
+    vols_all: list[float] = []
+    for c in rows:
+        close = c.get("c")
+        if close is None:
+            continue
+        closes_all.append(float(close))
+        # HL `v` is base-asset volume; convert to USD using the bar close so
+        # callers get comparable volume scales across mixed-source symbols.
+        base_vol = c.get("v") or 0.0
+        vols_all.append(float(base_vol) * float(close))
     if not closes_all:
         return None
     return closes_all[-days:], vols_all[-days:]
 
 
+async def _hl_universe_syms() -> set[str]:
+    """Set of uppercase symbols HL has perp coverage for."""
+    perps = await hl.perps_universe()
+    return {(p.get("symbol") or "").upper()
+            for p in (perps or [])
+            if p.get("symbol")}
+
+
 async def candles(symbols: list[str] | str, *, days: int = 30) -> dict[str, dict]:
-    """Resolve daily history for `symbols`, cascading CoinGecko → Hyperliquid.
+    """Resolve daily history for `symbols`, cascading Hyperliquid → CoinGecko.
 
     Returns `{symbol: {symbol, interval, closes, volumes, source}}`. Symbols
-    no source could resolve are absent.
+    no source could resolve are absent. Volumes are USD for both sources
+    (HL base-asset volume is normalized to USD via the bar close).
     """
     if isinstance(symbols, str):
         symbols = [symbols]
@@ -98,22 +119,25 @@ async def candles(symbols: list[str] | str, *, days: int = 30) -> dict[str, dict
         return {}
     days = max(1, int(days))
 
+    hl_syms = await _hl_universe_syms()
     out: dict[str, dict] = {}
 
     async def _one(sym: str) -> None:
+        if sym in hl_syms:
+            r = await _hl_history(sym, days)
+            if r is not None:
+                closes, volumes = r
+                out[sym] = {"symbol": sym, "interval": "1d",
+                            "closes": closes, "volumes": volumes,
+                            "source": "hyperliquid"}
+                return
+            # HL covers it but returned nothing — fall through.
         r = await _cg_history(sym, days)
         if r is not None:
             closes, volumes = r
             out[sym] = {"symbol": sym, "interval": "1d",
                         "closes": closes, "volumes": volumes,
                         "source": "coingecko"}
-            return
-        r = await _hl_history(sym, days)
-        if r is not None:
-            closes, volumes = r
-            out[sym] = {"symbol": sym, "interval": "1d",
-                        "closes": closes, "volumes": volumes,
-                        "source": "hyperliquid"}
             return
         log.debug("history: unresolved %s", sym)
 

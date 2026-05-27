@@ -26,6 +26,10 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
+def _env_str(name: str, default: str = "") -> str:
+    return os.environ.get(name, default).strip()
+
+
 # ---------- Networks ----------
 NETWORK_BASE = "base"
 NETWORK_SOLANA = "solana"
@@ -100,6 +104,8 @@ MESSARI_API_KEY        = os.environ.get("MESSARI_API_KEY", "").strip()
 TOKENTERMINAL_API_KEY  = os.environ.get("TOKENTERMINAL_API_KEY", "").strip()
 # The Graph — optional; without it we use the public gateway (throttled).
 THEGRAPH_API_KEY       = os.environ.get("THEGRAPH_API_KEY", "").strip()
+# Bankr — launchpad feed is keyless; key unlocks resolve_address + search_users.
+BANKR_API_KEY          = os.environ.get("BANKR_API_KEY", "").strip()
 
 # ---------- Pump.fun ----------
 PUMPFUN_DISCOVERY_TTL_S = _env_int("TCKR_PUMPFUN_DISCOVERY_TTL_S", 30)
@@ -131,6 +137,11 @@ COINGECKO_HISTORY_TTL_S = _env_int("TCKR_COINGECKO_HISTORY_TTL_S", 600)
 # ---------- Polymarket ----------
 # Odds shift continuously; cache short.
 POLYMARKET_TTL_S        = _env_int("TCKR_POLYMARKET_TTL_S", 30)
+# Polymarket occasionally renames a market's slug while keeping the same
+# on-chain conditionId. When set, tckr persists slug -> conditionId mappings
+# to this file so the next-fetch can recover the canonical slug via the
+# stable conditionId. Unset (default) keeps the alias map in-memory only.
+POLYMARKET_ALIASES_PATH = _env_str("TCKR_POLYMARKET_ALIASES_PATH", "")
 
 # ---------- Pyth (Hermes) ----------
 # Price moves are sub-second on-chain; cache very short for prices, much

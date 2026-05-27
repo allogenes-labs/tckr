@@ -86,6 +86,31 @@ async def test_polymarket_top_volume():
         assert "question" in m
 
 
+async def test_polymarket_market_status_alive():
+    """Pick a hot active market and confirm market_status classifies it as alive.
+
+    Uses top_volume to source a slug live (so we never hardcode a slug that
+    polymarket may rename). An active top-volume market should be "alive";
+    anything else (resolved/ghost/ambiguous) for a *just-discovered* active
+    market would indicate the cascade is mis-routing.
+    """
+    from tckr import polymarket as pm
+    rows = await pm.top_volume(limit=5)
+    if not rows:
+        pytest.skip("upstream returned no top-volume rows")
+    slug = next((m.get("slug") for m in rows if m.get("slug")), None)
+    if not slug:
+        pytest.skip("no slug on any top-volume row")
+    status = await pm.market_status(slug)
+    assert status in {"alive", "resolved_yes", "resolved_no",
+                      "ambiguous", "ghost"}
+    # A market picked from active top_volume should be alive; if it isn't,
+    # the discovery and detail endpoints disagree (worth surfacing).
+    assert status == "alive", (
+        f"top_volume returned slug {slug!r} but market_status said {status!r}"
+    )
+
+
 async def test_pyth_btc_usd():
     from tckr import pyth
     rows = await pyth.latest_price_for_symbols(["BTC/USD"])
@@ -118,6 +143,23 @@ async def test_solscan_public_token_meta_usdc():
     if data is None:
         pytest.skip("upstream returned None — solscan public API throttled")
     assert isinstance(data, dict)
+
+
+async def test_bankr_new_launches():
+    """Bankr public launchpad feed — keyless, fixed 50-row response."""
+    from tckr import bankr
+    rows = await bankr.new_launches(limit=5)
+    if rows is None:
+        pytest.skip("upstream returned None")
+    assert isinstance(rows, list)
+    if rows:
+        r = rows[0]
+        # Core fields that should always parse out of a deployed launch.
+        for k in ("activity_id", "token_address", "chain", "launch_type",
+                  "deployer_address", "timestamp_ms"):
+            assert k in r, f"missing key {k!r} in parsed bankr row"
+        # `chain` should be one of the known launchpad chains.
+        assert r["chain"] in {"base", "solana"}, f"unexpected chain {r['chain']!r}"
 
 
 async def test_thegraph_public_uniswap_v3():

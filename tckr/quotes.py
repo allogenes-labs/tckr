@@ -8,13 +8,18 @@ inherits the same fallback behavior.
 
 Cascade order (per symbol):
 
-  1. CoinGecko — broadest coverage (~14k coins), free tier rate-limits
-     aggressively. Resolved via `coin_id_from_symbol → simple_price`.
-  2. Hyperliquid — ~230 perp marks (BTC/ETH/SOL/NEAR/HYPE/RUNE/...).
-     Cheap, no auth, no observed rate-limit at typical volume.
-  3. (extensible) GeckoTerminal pool prices — for long-tail tokens addressable
-     only on-chain. Not enabled by default because it needs an address lookup
-     step; opt in via `get(symbols, allow_dex=True)`.
+  1. Hyperliquid mark — if `symbol` is in HL's ~230-perp universe
+     (BTC/ETH/SOL/NEAR/HYPE/RUNE/...). Live perp mark, no auth, no observed
+     rate limit. For majors at low basis, ±bp of CG spot; far fresher.
+  2. CoinGecko — broadest coverage (~14k coins) but free-tier rate-limits
+     aggressively. Used for any symbol HL doesn't cover, and as a backstop
+     when HL transiently returns no mark for a covered symbol.
+
+The order was previously CG-first, but in production we saw CG 429-ing on
+nearly every turn for the majors HL already covers — wasting requests and
+serving older data than HL's live mark. The current order takes the fresher
+source where it exists and only falls through to CG when HL truly can't
+answer.
 
 Returned shape per resolved symbol:
 
@@ -75,12 +80,21 @@ async def _hl_price(symbol: str) -> float | None:
         return None
 
 
+async def _hl_universe_syms() -> set[str]:
+    """Set of uppercase symbols HL has perp marks for. TTL-cached at hl layer."""
+    perps = await hl.perps_universe()
+    return {(p.get("symbol") or "").upper()
+            for p in (perps or [])
+            if p.get("symbol")}
+
+
 async def get(symbols: list[str] | str) -> dict[str, dict]:
-    """Resolve USD prices for `symbols`, cascading CoinGecko → Hyperliquid.
+    """Resolve USD prices for `symbols`, cascading Hyperliquid → CoinGecko.
 
     Returns `{symbol: {symbol, price, source, ts}}`. Symbols no source could
-    resolve are absent. Each provider is allowed to fail independently; a
-    CoinGecko 429 just means that symbol falls through to HL.
+    resolve are absent. HL is tried first for any symbol in its perp universe
+    (fresher mark, no rate limit); CG handles the long-tail and acts as a
+    backstop when HL transiently returns nothing for a covered symbol.
     """
     if isinstance(symbols, str):
         symbols = [symbols]
@@ -89,20 +103,24 @@ async def get(symbols: list[str] | str) -> dict[str, dict]:
     if not syms:
         return {}
 
+    hl_syms = await _hl_universe_syms()
     out: dict[str, dict] = {}
 
     async def _one(sym: str) -> None:
-        # Primary: CoinGecko spot.
+        # Prefer HL where it has coverage — live mark beats CG's cached spot
+        # and isn't subject to the free-tier rate limit.
+        if sym in hl_syms:
+            px = await _hl_price(sym)
+            if px is not None:
+                out[sym] = {"symbol": sym, "price": px,
+                            "source": "hyperliquid", "ts": _now_iso()}
+                return
+            # HL says it should cover this but didn't (auction/transient) —
+            # fall through to CG rather than returning nothing.
         px = await _cg_price(sym)
         if px is not None:
             out[sym] = {"symbol": sym, "price": px,
                         "source": "coingecko", "ts": _now_iso()}
-            return
-        # Fallback: Hyperliquid mark price.
-        px = await _hl_price(sym)
-        if px is not None:
-            out[sym] = {"symbol": sym, "price": px,
-                        "source": "hyperliquid", "ts": _now_iso()}
             return
         log.debug("quotes: unresolved %s", sym)
 

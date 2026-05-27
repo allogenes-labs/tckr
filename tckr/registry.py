@@ -90,6 +90,16 @@ REGISTRY: dict[str, ModuleSpec] = {
         notes="Clanker Farcaster-native token launcher; carries requestor_fid "
               "for cross-link with neynar.",
     ),
+    "bankr": ModuleSpec(
+        "bankr", Tier.KEYLESS_FREE,
+        # Public launchpad feed works keyless; key unlocks identity-resolve
+        # and user-search extras (BANKR_API_KEY, free signup at docs.bankr.bot).
+        optional_env=("BANKR_API_KEY",),
+        notes="Bankr launchpad feed (Doppler on Base, Raydium on Solana). "
+              "Carries x_username + x_profile_image_url — the X-side analogue "
+              "of clanker's Farcaster FID. BANKR_API_KEY (optional) unlocks "
+              "resolve_address + search_users.",
+    ),
 
     # ---------- Keyed-free ----------
     "alchemy": ModuleSpec(
