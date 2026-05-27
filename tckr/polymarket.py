@@ -37,7 +37,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from tckr import _http, settings
@@ -91,7 +91,7 @@ def _remember_alias(slug: str, condition_id: str | None,
     _aliases[slug] = {
         "condition_id": condition_id,
         "canonical_slug": canonical_slug or slug,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(UTC).isoformat(),
     }
     p = _aliases_path()
     if p is None:
