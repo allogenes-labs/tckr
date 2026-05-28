@@ -6,6 +6,8 @@ All notable changes to `tckr` are documented here. Format roughly follows
 
 ## [Unreleased]
 
+## [0.2.4] — 2026-05-28
+
 ### Added
 - **Polymarket CLOB layer** — `book(token_id)`, `outcome_book(slug, outcome)`,
   `outcome_touches(slug)`, `effective_fill(slug, outcome, side, qty)`. The
