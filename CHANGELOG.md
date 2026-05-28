@@ -6,6 +6,34 @@ All notable changes to `tckr` are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Added
+- **Polymarket CLOB layer** — `book(token_id)`, `outcome_book(slug, outcome)`,
+  `outcome_touches(slug)`, `effective_fill(slug, outcome, side, qty)`. The
+  Gamma API's `bestBid` / `bestAsk` are AMM midpoints that can diverge
+  wildly from the live CLOB on thin markets (observed: gamma 0.52 vs CLOB
+  best_ask 0.96 on a real market). The new functions hit
+  `clob.polymarket.com` directly:
+  - `book()` returns normalized `{best_bid, best_ask, midpoint, spread,
+    last_trade_price, tick_size, min_order_size, bids[], asks[]}` for one
+    outcome token.
+  - `outcome_book()` keys the same data by slug + "yes"/"no" so callers
+    don't need to handle 75-digit ERC1155 token ids.
+  - `outcome_touches()` returns YES + NO touches in parallel (single
+    gamma + two CLOB calls) — the right call for "is this fillable?"
+    checks before sizing in.
+  - `effective_fill()` walks the book to compute a volume-weighted fill
+    price, signed `slippage_from_touch_bps` (positive = adverse), and
+    `qty_unfilled` / `fully_filled` flags so the caller knows whether the
+    venue can actually absorb their size.
+- **`_shape_market` now exposes `no_price`, `yes_token_id`, `no_token_id`,
+  `clob_token_ids`** — the on-chain ERC1155 token ids needed to query the
+  CLOB book layer above.
+- **Agent toolkit** — three new MCP tools: `pm_book`, `pm_touch`,
+  `pm_size_to_fill`. Tool descriptions on `pm_top_volume` and `pm_market`
+  also gained explicit warnings that those gamma fields are NOT live
+  fillable prices — agents should run `pm_touch` or `pm_size_to_fill`
+  before sizing into any position.
+
 ### Fixed
 - **`polymarket.markets()` / `polymarket.market()` `volume_24h` field was
   silently returning lifetime volume.** `_shape_market` mapped `volumeNum`

@@ -86,6 +86,37 @@ async def test_polymarket_top_volume():
         assert "question" in m
 
 
+async def test_polymarket_outcome_touches():
+    """Live CLOB touch summary — sources slug via top_volume so we never hardcode.
+
+    Exercises the gamma + 2-book parallel-fetch path. We accept a wide range
+    of returned values (real Polymarket books can be very thin) — just assert
+    shape + that at least one side responded with a non-null best_bid or
+    best_ask. The interesting wedge in this code path is the asyncio.gather
+    with the `_none()` placeholder, which the shape-check covers.
+    """
+    from tckr import polymarket as pm
+    rows = await pm.top_volume(limit=5)
+    if not rows:
+        pytest.skip("upstream returned no top-volume rows")
+    slug = next((m.get("slug") for m in rows if m.get("slug")), None)
+    if not slug:
+        pytest.skip("no slug on any top-volume row")
+    t = await pm.outcome_touches(slug)
+    if t is None:
+        pytest.skip(f"outcome_touches returned None for {slug!r}")
+    for k in ("slug", "yes_bid", "yes_ask", "no_bid", "no_ask",
+              "tick_size", "min_order_size", "liquidity"):
+        assert k in t, f"missing key {k!r} in outcome_touches shape"
+    # At least one side should have produced a touch — if both books were
+    # empty, our gamma + CLOB cascade isn't talking to the right market.
+    sides = [t.get("yes_bid"), t.get("yes_ask"),
+             t.get("no_bid"), t.get("no_ask")]
+    assert any(v is not None for v in sides), (
+        f"both YES and NO books were empty for top-volume slug {slug!r}"
+    )
+
+
 async def test_polymarket_market_status_alive():
     """Pick a hot active market and confirm market_status classifies it as alive.
 

@@ -831,7 +831,11 @@ async def _t_cg_global(args: dict):
     "pm_top_volume",
     "Active Polymarket prediction markets sorted by 24h volume — a discovery "
     "pass for what the prediction market is currently pricing. Returns {slug, "
-    "question, yes_price, volume, end_date, ...}.",
+    "question, yes_price, volume, end_date, ...}. NOTE: 24h volume is "
+    "cumulative over the last 24 hours; a market with strong 24h volume can "
+    "still have a wide instantaneous spread RIGHT NOW because activity died "
+    "off. Always run `pm_touch` (or `pm_size_to_fill` for your intended size) "
+    "on any candidate before treating it as fillable.",
     module="polymarket",
     schema={
         "type": "object",
@@ -849,7 +853,12 @@ async def _t_pm_top_volume(args: dict):
 @register_tool(
     "pm_market",
     "Single Polymarket market by slug or numeric id. Returns the full market "
-    "with current YES price, outcomes, volume, liquidity, end date, tags.",
+    "with current YES price, outcomes, volume, liquidity, end date, tags. "
+    "NOTE: `yes_price` / `no_price` here are gamma's AMM midpoints — they can "
+    "diverge wildly from the live CLOB touch on thin markets (we've seen a "
+    "gamma midpoint of 0.52 against a real best_ask of 0.96). Use `pm_book` "
+    "or `pm_touch` to read the actual fillable price before sizing into any "
+    "Polymarket position.",
     module="polymarket",
     schema={
         "type": "object",
@@ -862,6 +871,93 @@ async def _t_pm_top_volume(args: dict):
 async def _t_pm_market(args: dict):
     from tckr import polymarket as pm
     return await pm.market(args["slug_or_id"])
+
+
+@register_tool(
+    "pm_book",
+    "Live CLOB orderbook touch for ONE outcome of a Polymarket market, keyed "
+    "by slug + outcome ('yes' or 'no'). Returns best_bid, best_ask, midpoint, "
+    "spread, last_trade_price, tick_size, min_order_size, and the raw top-of-"
+    "book bid/ask levels. This is what your order will ACTUALLY fill against — "
+    "use it before sizing any position. YES and NO each have independent "
+    "orderbooks; a tight YES book doesn't imply a tight NO book. If best_bid "
+    "and best_ask are far apart (>5% spread is normal-ish on prediction "
+    "markets; >20% means the venue is essentially dead), don't size up.",
+    module="polymarket",
+    schema={
+        "type": "object",
+        "properties": {
+            "slug_or_id": {"type": "string", "description": "Market slug or numeric id"},
+            "outcome":    {"type": "string", "enum": ["yes", "no"], "default": "yes",
+                           "description": "Which outcome's book — 'yes' or 'no'"},
+        },
+        "required": ["slug_or_id"],
+    },
+)
+async def _t_pm_book(args: dict):
+    from tckr import polymarket as pm
+    return await pm.outcome_book(args["slug_or_id"], outcome=args.get("outcome", "yes"))
+
+
+@register_tool(
+    "pm_touch",
+    "Compact YES + NO touch summary for one Polymarket market — both outcome "
+    "books in a single call. Returns yes_bid/yes_ask/yes_mid/yes_spread, "
+    "no_bid/no_ask/no_mid/no_spread, yes_last_trade/no_last_trade, tick_size, "
+    "min_order_size, plus market-level liquidity / volume_24h. Use this as a "
+    "single-glance 'is this market fillable on either side?' check before "
+    "deciding whether to dig deeper. Cheaper than two pm_book calls when you "
+    "want a fast read.",
+    module="polymarket",
+    schema={
+        "type": "object",
+        "properties": {
+            "slug_or_id": {"type": "string", "description": "Market slug or numeric id"},
+        },
+        "required": ["slug_or_id"],
+    },
+)
+async def _t_pm_touch(args: dict):
+    from tckr import polymarket as pm
+    return await pm.outcome_touches(args["slug_or_id"])
+
+
+@register_tool(
+    "pm_size_to_fill",
+    "Walk the CLOB book to estimate what `qty` shares would ACTUALLY fill at — "
+    "the touch price only quotes the first level; once you size up you walk "
+    "deeper. Returns effective_price (volume-weighted), touch_price, "
+    "slippage_from_touch_bps (signed: positive = adverse), qty_filled "
+    "(may be < requested if the book exhausts), qty_unfilled, fully_filled, "
+    "levels_consumed, min_order_size, below_min_order_size, and total_notional. "
+    "Why this matters on Polymarket: books are routinely thin. A market showing "
+    "midpoint 0.52 might fill the first 50 shares at 0.55 then jump to 0.75 — "
+    "your effective cost on a 1000-share position can be 20+ cents above the "
+    "touch. Call this BEFORE any non-trivial position to know what you're "
+    "actually paying. If `fully_filled` is false, the venue cannot absorb your "
+    "size — split the order, size down, or look elsewhere.",
+    module="polymarket",
+    schema={
+        "type": "object",
+        "properties": {
+            "slug_or_id": {"type": "string", "description": "Market slug or numeric id"},
+            "outcome":    {"type": "string", "enum": ["yes", "no"], "default": "yes",
+                           "description": "Which outcome — 'yes' or 'no'"},
+            "side":       {"type": "string", "enum": ["buy", "sell"], "default": "buy",
+                           "description": "'buy' walks asks; 'sell' walks bids (for closing a long)"},
+            "qty":        {"type": "number", "description": "Shares to fill (must be > 0)"},
+        },
+        "required": ["slug_or_id", "qty"],
+    },
+)
+async def _t_pm_size_to_fill(args: dict):
+    from tckr import polymarket as pm
+    return await pm.effective_fill(
+        args["slug_or_id"],
+        outcome=args.get("outcome", "yes"),
+        side=args.get("side", "buy"),
+        qty=float(args["qty"]),
+    )
 
 
 @register_tool(
