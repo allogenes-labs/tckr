@@ -154,7 +154,7 @@ def _shape_market(m: dict) -> dict:
         "outcomes":      outcomes,
         "outcome_prices": outcome_prices,
         "volume":        _to_float(m.get("volume")),
-        "volume_24h":    _to_float(m.get("volumeNum") or m.get("volume24hr")),
+        "volume_24h":    _to_float(m.get("volume24hr") or m.get("volume24hrClob")),
         "liquidity":     _to_float(m.get("liquidity")),
         "end_date":      m.get("endDate"),
         "closed":        bool(m.get("closed")),

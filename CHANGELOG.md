@@ -6,6 +6,17 @@ All notable changes to `tckr` are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Fixed
+- **`polymarket.markets()` / `polymarket.market()` `volume_24h` field was
+  silently returning lifetime volume.** `_shape_market` mapped `volumeNum`
+  (the numeric form of total volume on the Gamma API) to `volume_24h`,
+  falling through to `volume24hr` only when `volumeNum` was missing — which
+  it almost never is. Anyone sorting or filtering by `volume_24h` was
+  scoring on total volume instead. The mapping now prefers `volume24hr`
+  with `volume24hrClob` as fallback; `volume` (total) is unchanged. Caught
+  while exploring sports markets where every row reported identical
+  `volume` and `volume_24h`.
+
 ## [0.2.3] — 2026-05-27
 
 ### Added
