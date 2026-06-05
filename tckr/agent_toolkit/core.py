@@ -136,9 +136,15 @@ async def _t_capabilities(args: dict) -> dict:
 @register_tool(
     "hl_perp",
     "Hyperliquid perp snapshot for one symbol — mark price, 24h change, funding "
-    "rate (hourly + annualized APR), open interest (base and USD), 24h volume, "
-    "max leverage. Use to read perps sentiment: extreme funding APR (>50% or "
-    "<-50%) signals crowded positioning.",
+    "(hourly + APR + APR-above-baseline), premium (perp vs spot, fraction), open "
+    "interest (base and USD), 24h volume, max leverage. "
+    "READING FUNDING CORRECTLY: Hyperliquid funding has a built-in interest-rate "
+    "baseline of ~+10.95% APR, so raw `funding_apr_pct` near +10.95% with "
+    "`premium` ≈ 0 is the mechanical floor, NOT crowded longs. Use "
+    "`funding_above_baseline_apr_pct` for the real demand component, and confirm "
+    "direction with `premium` (positive = perp trades above spot = longs "
+    "crowded; negative = perp below spot = shorts crowded). True crowded-long "
+    "fade setup needs BOTH funding_above_baseline_apr_pct > 0 AND premium > 0.",
     module="hyperliquid",
     schema={
         "type": "object",
@@ -156,8 +162,13 @@ async def _t_hl_perp(args: dict) -> dict:
 @register_tool(
     "hl_funding_history",
     "Recent hourly funding rates for a Hyperliquid perp. Returns chronological "
-    "list of {t, funding_rate_hourly, premium}. Use to spot funding regime "
-    "changes (sustained positive funding = longs paying = bullish crowding).",
+    "list of {t, funding_rate_hourly, funding_apr_pct, "
+    "funding_above_baseline_apr_pct, premium}. Use to spot funding regime "
+    "changes. NOTE: Hyperliquid has a ~+10.95% APR interest-rate baseline; "
+    "rates pinned at +10.95% with premium ≈ 0 are the floor, not crowded longs. "
+    "Read `funding_above_baseline_apr_pct` (sustained > 0 = longs paying real "
+    "carry; sustained < 0 = shorts paying / squeeze risk) together with "
+    "`premium` for direction.",
     module="hyperliquid",
     schema={
         "type": "object",

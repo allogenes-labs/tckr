@@ -8,6 +8,12 @@ Conventions:
 - Upstream numbers are strings; parsers cast to float.
 - Funding rate is per-hour (Hyperliquid charges hourly). `funding_apr_pct` is
   the linear-annualization convenience field.
+- Hyperliquid funding has a built-in interest-rate baseline of ~1.25e-5/hour
+  (≈ +10.95% APR) that is added on top of the actual perp-vs-spot premium.
+  Raw `funding_apr_pct` near +10.95% with `premium` ≈ 0 is the floor — NOT
+  a "crowded longs" signal. `funding_above_baseline_apr_pct` subtracts the
+  baseline so the demand-driven component is directly readable; combine with
+  the sign of `premium` to judge directional crowding.
 
 Failure modes & coverage:
 - Coverage is the ~230 tokens listed as perps — majors + most active mid-caps.
@@ -33,6 +39,12 @@ log = logging.getLogger("tckr.hyperliquid")
 
 _BASE = "https://api.hyperliquid.xyz"
 _cache = TTLCache()
+
+# Hyperliquid funding has an interest-rate baseline component (~0.01% per 8h)
+# that is added to the premium. When premium ≈ 0 the raw funding still prints
+# ~1.25e-5/hour (≈ +10.95% APR). Subtract this to see real demand pressure.
+HL_FUNDING_BASELINE_HOURLY = 1.25e-5
+HL_FUNDING_BASELINE_APR_PCT = HL_FUNDING_BASELINE_HOURLY * 24 * 365 * 100.0
 
 
 def _now_iso() -> str:
@@ -76,6 +88,10 @@ def _parse_perp(meta_row: dict, ctx_row: dict) -> dict:
     oi_usd = (oi * mark) if (oi is not None and mark is not None) else None
     funding_hr = _f(ctx_row.get("funding"))
     funding_apr_pct = (funding_hr * 24 * 365 * 100.0) if funding_hr is not None else None
+    funding_above_baseline_apr_pct = (
+        (funding_apr_pct - HL_FUNDING_BASELINE_APR_PCT)
+        if funding_apr_pct is not None else None
+    )
     return {
         "symbol": name,
         "mark_px": mark,
@@ -85,6 +101,7 @@ def _parse_perp(meta_row: dict, ctx_row: dict) -> dict:
         "day_change_pct": day_change_pct,
         "funding_rate_hourly": funding_hr,
         "funding_apr_pct": funding_apr_pct,
+        "funding_above_baseline_apr_pct": funding_above_baseline_apr_pct,
         "open_interest": oi,
         "open_interest_usd": oi_usd,
         "day_notional_volume_usd": _f(ctx_row.get("dayNtlVlm")),
@@ -163,11 +180,20 @@ async def funding_history(symbol: str, *, hours: int = 24) -> list[dict]:
     body = await _info({"type": "fundingHistory", "coin": sym, "startTime": start_ms})
     if not isinstance(body, list):
         return []
-    rows = [{
-        "t": _ms_to_iso(r.get("time")),
-        "funding_rate_hourly": _f(r.get("fundingRate")),
-        "premium": _f(r.get("premium")),
-    } for r in body if isinstance(r, dict)]
+    rows = []
+    for r in body:
+        if not isinstance(r, dict):
+            continue
+        fr = _f(r.get("fundingRate"))
+        apr = (fr * 24 * 365 * 100.0) if fr is not None else None
+        above = (apr - HL_FUNDING_BASELINE_APR_PCT) if apr is not None else None
+        rows.append({
+            "t": _ms_to_iso(r.get("time")),
+            "funding_rate_hourly": fr,
+            "funding_apr_pct": apr,
+            "funding_above_baseline_apr_pct": above,
+            "premium": _f(r.get("premium")),
+        })
     rows.sort(key=lambda x: x["t"] or "")
     _cache.put(ck, rows)
     return rows
