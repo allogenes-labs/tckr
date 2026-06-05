@@ -29,8 +29,12 @@ Import source modules directly:
     messari         research-grade asset profiles, metrics, news
     tokenterminal   protocol fundamentals (revenue, P/E, treasury)
     thegraph        GraphQL access to indexed subgraphs (Uniswap, Aave, ...)
+    options         US equity/ETF option chains + greeks + IV (Alpaca, free key)
+    cboe            keyless option chains + greeks + IV + OI (CBOE delayed; incl. indices)
 
 Unified cascades (best-effort across providers):
+
+    options.chain_cascade   option chain: Alpaca (if keyed) → keyless CBOE delayed
 
     quotes          USD spot price cascade: CoinGecko → Hyperliquid
     history         daily candle cascade:   CoinGecko market_chart → HL candleSnapshot

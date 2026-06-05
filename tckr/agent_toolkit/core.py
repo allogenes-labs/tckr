@@ -1316,6 +1316,98 @@ async def _t_tg_uniswap_v3_top_pools(args: dict):
 
 
 # ============================================================================
+# Options (Alpaca) — US equity/ETF option chains, quotes, greeks
+# ============================================================================
+
+@register_tool(
+    "opt_chain",
+    "Option chain for a US stock/ETF/index (e.g. AAPL, SPY, SPX) with quotes "
+    "AND model greeks (delta/gamma/theta/vega/rho) + implied volatility per "
+    "contract — the supported replacement for yfinance options (which has no "
+    "greeks). Cascades Alpaca (if ALPACA_API_KEY+SECRET are set; opra-capable) "
+    "→ keyless CBOE delayed feed, so it works with NO key out of the box. "
+    "Returns {underlying, feed, source, count, contracts:[{symbol, expiration, "
+    "dte, type, strike, bid, ask, mid, last, iv, delta, gamma, theta, vega, "
+    "rho, open_interest?, volume?}, ...]}; `source` is 'alpaca' or 'cboe'. Both "
+    "feeds are delayed ~15m on the free tier. ALWAYS pass `expiration` (or "
+    "exp_gte/exp_lte) for a liquid name — the all-expiry chain is thousands of "
+    "contracts. Use opt_expirations first if you don't know valid expiry dates.",
+    module="",  # cascade — Alpaca (keyed) → CBOE (keyless), not one registry module
+    schema={
+        "type": "object",
+        "properties": {
+            "underlying":  {"type": "string", "description": "Stock/ETF ticker, e.g. AAPL, SPY, NVDA"},
+            "expiration":  {"type": "string", "description": "Exact expiry YYYY-MM-DD (strongly recommended)"},
+            "exp_gte":     {"type": "string", "description": "Min expiry YYYY-MM-DD (range alternative)"},
+            "exp_lte":     {"type": "string", "description": "Max expiry YYYY-MM-DD (range alternative)"},
+            "type":        {"type": "string", "description": "Filter to 'call' or 'put' (default: both)"},
+            "strike_gte":  {"type": "number", "description": "Min strike price"},
+            "strike_lte":  {"type": "number", "description": "Max strike price"},
+            "limit":       {"type": "integer", "description": "Contracts per page (default 100, max 1000)", "default": 100},
+        },
+        "required": ["underlying"],
+    },
+)
+async def _t_opt_chain(args: dict):
+    from tckr import options as opt
+    return await opt.chain_cascade(
+        args["underlying"],
+        expiration=args.get("expiration"),
+        exp_gte=args.get("exp_gte"),
+        exp_lte=args.get("exp_lte"),
+        type=args.get("type"),
+        strike_gte=args.get("strike_gte"),
+        strike_lte=args.get("strike_lte"),
+        limit=max(1, min(int(args.get("limit", 100)), 1000)),
+    )
+
+
+@register_tool(
+    "opt_snapshot",
+    "Snapshots for one or more explicit OCC option contract symbols (e.g. "
+    "'AAPL260619C00150000'). Returns the same per-contract rows as opt_chain "
+    "(quote, last, IV, greeks). Cascades Alpaca (if keyed) → keyless CBOE. Use "
+    "when you already have specific contract symbols and want just those, "
+    "instead of pulling a whole chain.",
+    module="",  # cascade — Alpaca (keyed) → CBOE (keyless)
+    schema={
+        "type": "object",
+        "properties": {
+            "symbols": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "OCC contract symbols, e.g. ['AAPL260619C00150000']",
+            },
+        },
+        "required": ["symbols"],
+    },
+)
+async def _t_opt_snapshot(args: dict):
+    from tckr import options as opt
+    return await opt.snapshot_cascade(args.get("symbols") or [])
+
+
+@register_tool(
+    "opt_expirations",
+    "Available option expiration dates and strike range for a US stock/ETF/"
+    "index. Returns {underlying, expirations:[YYYY-MM-DD,...], strikes:{min,max}, "
+    "source}. Cascades Alpaca (if keyed) → keyless CBOE, so it works with no "
+    "key. Call this before opt_chain to pick a valid expiry rather than guessing.",
+    module="",  # cascade — Alpaca (keyed) → CBOE (keyless)
+    schema={
+        "type": "object",
+        "properties": {
+            "underlying": {"type": "string", "description": "Stock/ETF/index ticker, e.g. AAPL, SPY, SPX"},
+        },
+        "required": ["underlying"],
+    },
+)
+async def _t_opt_expirations(args: dict):
+    from tckr import options as opt
+    return await opt.expirations_cascade(args["underlying"])
+
+
+# ============================================================================
 # Prompt-injection helpers
 # ============================================================================
 

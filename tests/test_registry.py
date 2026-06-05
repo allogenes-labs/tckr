@@ -46,6 +46,10 @@ def test_every_data_source_module_in_registry():
         "tokenterminal", "thegraph",
         # Bankr launchpad integration:
         "bankr",
+        # Equity/ETF options (Alpaca):
+        "options",
+        # Keyless options fallback (CBOE delayed):
+        "cboe",
     }
     actual = set(registry.REGISTRY.keys())
     missing = expected - actual

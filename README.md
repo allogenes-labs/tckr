@@ -102,6 +102,7 @@ Free signups, no credit cards. Ranked by what we actually use in production:
 | `HELIUS_API_KEY` | Solana RPC + Jito MEV intel + wallet PnL (3 modules) | [helius.dev](https://helius.dev) |
 | `COINALYZE_API_KEY` | Cross-exchange perps: funding spread, OI, liquidations (Binance / Bybit / OKX / HL) | [coinalyze.net](https://coinalyze.net) |
 | `BIRDEYE_API_KEY` | Solana token analytics, top holders, contract security | [birdeye.so](https://birdeye.so) |
+| `ALPACA_API_KEY` + `ALPACA_API_SECRET` | US equity/ETF option chains + greeks + IV (free `indicative` feed; no account funding needed) | [alpaca.markets](https://alpaca.markets) |
 | `MORALIS_API_KEY` *or* `BITQUERY_API_KEY` | Pump.fun discovery (new / about-to-bond / graduated). Either one alone is sufficient | [moralis.io](https://moralis.io) / [bitquery.io](https://bitquery.io) |
 | `COINGECKO_DEMO_API_KEY` | Higher rate limit on the most-used price endpoint — free tier 429s under any real load | [coingecko.com](https://coingecko.com) |
 | `ETHERSCAN_API_KEY` | ~70 EVM chains via the unified V2 API (one key covers ETH, Base, Arb, Op, Polygon, BNB, …) | [etherscan.io](https://etherscan.io) |
@@ -138,6 +139,7 @@ All keys are optional. Modules without their key gracefully no-op (return `None`
 | `clanker` | keyless | — | Clanker Farcaster-native token launcher |
 | `coingecko` | keyless / keyed | `COINGECKO_DEMO_API_KEY`, `COINGECKO_API_KEY` | Spot / market / historical prices; trending; categories |
 | `polymarket` | keyless | — | Prediction-market odds (binary YES/NO) |
+| `cboe` | keyless | — | Option chains + greeks + IV + OI/volume, incl. indices (CBOE delayed ~15m; unofficial). Keyless fallback under the `options` cascade |
 | `pyth` | keyless | — | On-chain oracle prices: ~400 feeds (crypto, equities, FX, metals) |
 | `solscan` | keyless / keyed | `SOLSCAN_API_KEY` (Pro) | Solana block explorer |
 | `thegraph` | keyless / keyed | `THEGRAPH_API_KEY` | Generic GraphQL access to indexed subgraphs |
@@ -145,6 +147,7 @@ All keys are optional. Modules without their key gracefully no-op (return `None`
 | `helius` | keyed-free | `HELIUS_API_KEY` | Solana RPC convenience layer |
 | `coinalyze` | keyed-free | `COINALYZE_API_KEY` | Cross-exchange perps: funding spread, OI, liquidations |
 | `birdeye` | keyed-free | `BIRDEYE_API_KEY` | Solana token analytics (overview, holders, security) |
+| `options` | keyed-free | `ALPACA_API_KEY` + `ALPACA_API_SECRET` | US equity/ETF option chains + greeks + IV (Alpaca; free `indicative` feed) |
 | `etherscan` | keyed-free | `ETHERSCAN_API_KEY` | Unified EVM block explorer (~70 chains via `chainid`) |
 | `lunarcrush` | keyed-free | `LUNARCRUSH_API_KEY` | Social sentiment: Galaxy Score, AltRank, topic feeds |
 | `lp_lock` | keyed-free | `ALCHEMY_API_KEY` | LP-lock detection: Uniswap V2 / V3 / V4 on Base / ETH |

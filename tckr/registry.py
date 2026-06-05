@@ -221,6 +221,21 @@ REGISTRY: dict[str, ModuleSpec] = {
               "tier exposes project catalog + limited metrics; detailed "
               "historical series are paid.",
     ),
+    "cboe": ModuleSpec(
+        "cboe", Tier.KEYLESS_FREE,
+        notes="Keyless US equity/ETF/INDEX option chains + greeks + IV + open "
+              "interest/volume via CBOE's public delayed (~15m) feed. Unofficial "
+              "endpoint (no SLA). The zero-signup fallback under the `options` "
+              "(Alpaca) cascade; also covers indices (SPX/VIX/NDX) Alpaca lacks.",
+    ),
+    "options": ModuleSpec(
+        "options", Tier.KEYED_FREE,
+        required_env=("ALPACA_API_KEY", "ALPACA_API_SECRET"),
+        notes="US equity/ETF option chains + greeks (delta/gamma/theta/vega/rho) "
+              "+ IV via Alpaca. Free signup (no funding) at alpaca.markets; free "
+              "tier uses the delayed `indicative` feed. The supported replacement "
+              "for unofficial yfinance options scraping (which has no greeks).",
+    ),
     "thegraph": ModuleSpec(
         "thegraph", Tier.KEYLESS_FREE,
         # Optional key unlocks the higher-quota decentralized gateway; without

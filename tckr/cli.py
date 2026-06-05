@@ -8,6 +8,7 @@ Commands (`tckr <cmd> --help` for details):
     dex     DEX pools on a network (trending / new / top)
     token   token snapshot by contract address
     perps   Hyperliquid perps (top by OI, or named symbols)
+    options US equity/ETF option chain + greeks (Alpaca; --expirations to list expiries)
     tvl     DefiLlama chain TVL (one chain + protocols, or top by TVL)
     wallet  on-chain wallet holdings (Base, Ethereum, or Solana)
     status  show which modules are configured + their tier
@@ -340,6 +341,71 @@ async def cmd_perps(args) -> None:
               f"{_fmt_usd(p['day_notional_volume_usd']):<10}")
 
 
+async def cmd_options(args) -> None:
+    from tckr import cboe
+    from tckr import options as opt
+
+    # --source: auto cascades (Alpaca if keyed → keyless CBOE); explicit forces one.
+    src = args.source
+
+    if args.expirations:
+        if src == "alpaca":
+            exps = await opt.expirations(args.underlying)
+        elif src == "cboe":
+            exps = await cboe.expirations(args.underlying)
+        else:
+            exps = await opt.expirations_cascade(args.underlying)
+        if not exps:
+            print(f"# no options data for {args.underlying} "
+                  f"(Alpaca needs ALPACA_API_KEY + ALPACA_API_SECRET; "
+                  f"CBOE keyless fallback also returned nothing)")
+            return
+        sk = exps.get("strikes") or {}
+        via = f"  via {exps['source']}" if exps.get("source") else ""
+        print(f"# {exps['underlying']} expirations (n={len(exps['expirations'])})  "
+              f"strikes {_fmt_num(sk.get('min'))}-{_fmt_num(sk.get('max'))}{via}\n")
+        for e in exps["expirations"]:
+            print(f"  {e}")
+        return
+
+    if src == "alpaca":
+        chain = await opt.option_chain(args.underlying, expiration=args.exp,
+                                       type=args.type, limit=args.limit)
+    elif src == "cboe":
+        chain = await cboe.option_chain(args.underlying, expiration=args.exp,
+                                        type=args.type)
+    else:
+        chain = await opt.chain_cascade(args.underlying, expiration=args.exp,
+                                        type=args.type, limit=args.limit)
+    if chain is None:
+        print(f"# no chain for {args.underlying} "
+              f"(Alpaca needs ALPACA_API_KEY + ALPACA_API_SECRET; "
+              f"CBOE keyless fallback also returned nothing)")
+        return
+    rows = chain["contracts"]
+    label = f" exp={args.exp}" if args.exp else ""
+    via = f"  source={chain['source']}" if chain.get("source") else ""
+    print(f"# {chain['underlying']} options{label}  feed={chain['feed']}{via}  "
+          f"n={chain['count']}\n")
+
+    def _d(v, prec=2):  # fixed-decimal price/greek (not sig-figs like _fmt_num)
+        return f"{float(v):.{prec}f}" if v is not None else "?"
+
+    print(f"{'expiry':<12} {'type':<5} {'strike':<9} {'bid':<8} {'ask':<8} "
+          f"{'last':<8} {'IV':<7} {'delta':<7}")
+    for c in rows[:args.top]:
+        print(f"{(c['expiration'] or '?'):<12} "
+              f"{(c['type'] or '?'):<5} "
+              f"{_d(c['strike']):<9} "
+              f"{_d(c['bid']):<8} "
+              f"{_d(c['ask']):<8} "
+              f"{_d(c['last']):<8} "
+              f"{_d(c['iv'], 3):<7} "
+              f"{_d(c['delta'], 3):<7}")
+    if len(rows) > args.top:
+        print(f"\n  ... {len(rows) - args.top} more (raise --top)")
+
+
 async def cmd_tvl(args) -> None:
     from tckr import defillama as dl
 
@@ -439,6 +505,21 @@ def _build_parser() -> argparse.ArgumentParser:
                      help="optional symbols; default: top N by open interest")
     sp.add_argument("--top", type=int, default=10)
 
+    sp = sub.add_parser("options",
+                        help="equity/ETF/index option chain + greeks "
+                             "(Alpaca if keyed, else keyless CBOE)")
+    sp.add_argument("underlying", help="stock/ETF/index ticker, e.g. AAPL, SPY, SPX")
+    sp.add_argument("--exp", help="expiration date YYYY-MM-DD")
+    sp.add_argument("--type", choices=("call", "put"), help="filter to calls or puts")
+    sp.add_argument("--source", choices=("auto", "alpaca", "cboe"), default="auto",
+                     help="data source: auto cascades Alpaca→CBOE (default)")
+    sp.add_argument("--expirations", action="store_true",
+                     help="list available expirations + strike range instead of the chain")
+    sp.add_argument("--limit", type=int, default=200,
+                     help="contracts fetched per page (default 200, max 1000)")
+    sp.add_argument("--top", type=int, default=25,
+                     help="rows to print (default 25)")
+
     sp = sub.add_parser("tvl", help="DefiLlama chain TVL")
     sp.add_argument("chain", nargs="?",
                      help="optional chain name; default: top N by TVL")
@@ -467,6 +548,7 @@ def main(argv=None) -> int:
         "dex":    cmd_dex,
         "token":  cmd_token,
         "perps":  cmd_perps,
+        "options": cmd_options,
         "tvl":    cmd_tvl,
         "wallet": cmd_wallet,
         "status": cmd_status,

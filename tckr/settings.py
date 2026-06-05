@@ -106,6 +106,12 @@ TOKENTERMINAL_API_KEY  = os.environ.get("TOKENTERMINAL_API_KEY", "").strip()
 THEGRAPH_API_KEY       = os.environ.get("THEGRAPH_API_KEY", "").strip()
 # Bankr — launchpad feed is keyless; key unlocks resolve_address + search_users.
 BANKR_API_KEY          = os.environ.get("BANKR_API_KEY", "").strip()
+# Alpaca — US equity/ETF options chains + greeks. Free signup (no funding) at
+# alpaca.markets gives both keys; data uses the free `indicative` feed by
+# default. ALPACA_OPTIONS_FEED=opra switches to real-time once subscribed.
+ALPACA_API_KEY         = os.environ.get("ALPACA_API_KEY", "").strip()
+ALPACA_API_SECRET      = os.environ.get("ALPACA_API_SECRET", "").strip()
+ALPACA_OPTIONS_FEED    = _env_str("ALPACA_OPTIONS_FEED", "indicative")
 
 # ---------- Pump.fun ----------
 PUMPFUN_DISCOVERY_TTL_S = _env_int("TCKR_PUMPFUN_DISCOVERY_TTL_S", 30)
@@ -172,3 +178,9 @@ TOKENTERMINAL_HISTORY_TTL_S = _env_int("TCKR_TOKENTERMINAL_HISTORY_TTL_S", 3600)
 
 # ---------- The Graph ----------
 THEGRAPH_TTL_S           = _env_int("TCKR_THEGRAPH_TTL_S", 60)
+
+# ---------- Options (Alpaca) ----------
+# Quotes/greeks move continuously, but the free `indicative` feed is delayed
+# ~15m anyway, so a short cache is plenty. The expiration ladder changes slowly.
+OPTIONS_TTL_S             = _env_int("TCKR_OPTIONS_TTL_S", 30)
+OPTIONS_EXPIRATIONS_TTL_S = _env_int("TCKR_OPTIONS_EXPIRATIONS_TTL_S", 3600)
