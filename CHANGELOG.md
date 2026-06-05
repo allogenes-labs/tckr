@@ -6,6 +6,38 @@ All notable changes to `tckr` are documented here. Format roughly follows
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-06-05
+
+### Added
+- **Listed options layer** — US equity/ETF/index option chains with model
+  greeks (delta/gamma/theta/vega/rho) and implied volatility per contract: the
+  supported replacement for unofficial yfinance options scraping, which has no
+  greeks and rate-limits aggressively.
+  - `options` (`tckr.options`, keyed-free) — Alpaca options snapshots:
+    `option_chain()`, `option_snapshot()`, `expirations()`, plus OCC symbol
+    `parse_occ()` / `build_occ()`. Free signup at alpaca.markets (no funding);
+    the free `indicative` feed is delayed ~15m, `ALPACA_OPTIONS_FEED=opra`
+    switches to real-time once subscribed.
+  - `cboe` (`tckr.cboe`, keyless) — CBOE public delayed-quote feed as a
+    zero-signup fallback. Covers indices (SPX/VIX/NDX/RUT) that Alpaca omits,
+    and adds `open_interest` / `volume` / `theo` per contract. Reuses the OCC
+    parser from `tckr.options` and emits the same flattened row shape.
+  - **Cascade** — `options.chain_cascade()` / `snapshot_cascade()` /
+    `expirations_cascade()` use Alpaca when keyed, else fall back to keyless
+    CBOE; each result carries a `source` field.
+  - **CLI** — `tckr options <ticker>` with `--exp`, `--type`, `--source`
+    (auto/alpaca/cboe), `--expirations`, `--limit`, `--top`.
+  - **Agent toolkit** — three new tools: `opt_chain`, `opt_snapshot`,
+    `opt_expirations` (all cascade Alpaca → keyless CBOE, so they work with no
+    key out of the box).
+- **Hyperliquid funding baseline** — perp snapshots and `funding_history()`
+  rows now expose `funding_above_baseline_apr_pct`, which subtracts
+  Hyperliquid's built-in ~+10.95% APR interest-rate floor so the demand-driven
+  component is directly readable; `funding_history()` also gains
+  `funding_apr_pct`. The `hl_perp` / `hl_funding_history` tool descriptions
+  explain reading it together with `premium` for real directional crowding
+  (raw funding near +10.95% with premium ≈ 0 is mechanical, not crowded longs).
+
 ## [0.2.4] — 2026-05-28
 
 ### Added
