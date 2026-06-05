@@ -44,6 +44,11 @@ Gotchas worth knowing (learned the hard way):
 
   3. The query param is `condition_ids` (plural, underscore). `conditionId`
      and `condition_id` are silently ignored by the API.
+
+  4. Tag filtering on `/markets` and `/events` is by numeric `tag_id`, NOT the
+     free-text `tag` slug the docs imply. Passing `tag=crypto` is silently
+     ignored and you get the *unfiltered* top-volume list. tckr resolves the
+     label/slug to an id via `/tags/slug/{slug}` (see `_resolve_tag_id`).
 """
 from __future__ import annotations
 
@@ -132,6 +137,40 @@ async def _get(path: str, params: dict | None = None, label: str | None = None):
         if data is not None:
             _cache.put(key, data)
         return data
+
+
+# label/slug -> numeric tag id (or None when the tag doesn't exist). The gamma
+# `/markets` and `/events` endpoints filter by numeric `tag_id`; the free-text
+# `tag` param they advertise is silently ignored, so an unresolved tag would
+# otherwise return the *unfiltered* top-volume list (mostly sports/politics).
+_tag_id_cache: dict[str, int | None] = {}
+
+
+async def _resolve_tag_id(tag: str) -> int | None:
+    """Resolve a tag label/slug (e.g. 'crypto', 'Politics') to its numeric id.
+
+    Numeric input passes straight through. Otherwise the tag is normalized to a
+    gamma slug (lowercased, spaces -> hyphens) and looked up via
+    `/tags/slug/{slug}`. Results — including misses — are cached for the process.
+    Returns None if the tag can't be resolved.
+    """
+    t = (tag or "").strip()
+    if not t:
+        return None
+    if t.isdigit():
+        return int(t)
+    if t in _tag_id_cache:
+        return _tag_id_cache[t]
+    slug = t.lower().replace(" ", "-")
+    row = await _get(f"/tags/slug/{slug}", label=f"polymarket tag {slug}")
+    tid: int | None = None
+    if isinstance(row, dict) and row.get("id") is not None:
+        try:
+            tid = int(row["id"])
+        except (TypeError, ValueError):
+            tid = None
+    _tag_id_cache[t] = tid
+    return tid
 
 
 def _shape_market(m: dict) -> dict:
@@ -229,7 +268,11 @@ async def markets(*, limit: int = 50, offset: int = 0,
     if closed is not None:
         params["closed"] = "true" if closed else "false"
     if tag:
-        params["tag"] = tag
+        tid = await _resolve_tag_id(tag)
+        if tid is not None:
+            params["tag_id"] = tid
+        else:
+            log.warning("polymarket markets: unknown tag %r — ignoring filter", tag)
     data = await _get("/markets", params=params, label="polymarket markets")
     if not isinstance(data, list):
         return None
@@ -681,7 +724,11 @@ async def events(*, limit: int = 25, active: bool | None = True,
     if closed is not None:
         params["closed"] = "true" if closed else "false"
     if tag:
-        params["tag"] = tag
+        tid = await _resolve_tag_id(tag)
+        if tid is not None:
+            params["tag_id"] = tid
+        else:
+            log.warning("polymarket events: unknown tag %r — ignoring filter", tag)
     data = await _get("/events", params=params, label="polymarket events")
     if not isinstance(data, list):
         return None
