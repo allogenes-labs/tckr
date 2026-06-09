@@ -24,14 +24,16 @@ ORANGE = "\x1b[38;5;208m"
 GREY = "\x1b[38;5;245m"
 BLUE = "\x1b[38;5;39m"
 
-# Cyan→magenta vertical gradient for the logo (one code per logo line).
-GRADIENT = (
-    "\x1b[38;5;51m",
-    "\x1b[38;5;45m",
-    "\x1b[38;5;39m",
-    "\x1b[38;5;99m",
-    "\x1b[38;5;171m",
-    "\x1b[38;5;201m",
+# Single-hue green fade for the logo, light → dark (one truecolor code per
+# logo line). Truecolor keeps the fade smooth; Windows Terminal / modern
+# consoles support it, and color is gated by supports_color() anyway.
+LOGO_FADE = (
+    "\x1b[38;2;120;255;120m",
+    "\x1b[38;2;88;226;88m",
+    "\x1b[38;2;58;197;58m",
+    "\x1b[38;2;38;168;38m",
+    "\x1b[38;2;24;138;24m",
+    "\x1b[38;2;14;112;14m",
 )
 
 

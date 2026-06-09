@@ -470,7 +470,7 @@ async def cmd_wallet(args) -> None:
 
 # --------------------------- status dashboard ---------------------------
 
-# "ANSI Shadow" block logo, one line per _ansi.GRADIENT entry.
+# "ANSI Shadow" block logo, one line per _ansi.LOGO_FADE entry.
 _TCKR_LOGO = [
     " ████████╗ ██████╗██╗  ██╗██████╗ ",
     " ╚══██╔══╝██╔════╝██║ ██╔╝██╔══██╗",
@@ -494,6 +494,15 @@ _TIER_COLOR = {
     "keyed-paid": _ansi.ORANGE,
 }
 
+# Compact tier labels for the dashboard column.
+_TIER_LABEL = {
+    "keyless-free": "keyless",
+    "keyed-free": "keyed",
+    "keyed-paid": "paid",
+}
+
+_BLURB_W = 30
+
 
 def _can_encode_unicode() -> bool:
     """True if stdout can render the block-glyph logo / box rules."""
@@ -509,20 +518,17 @@ def _render_logo(color: bool, unicode_ok: bool) -> list[str]:
     art = _TCKR_LOGO if unicode_ok else _TCKR_LOGO_ASCII
     if not color:
         return list(art)
-    grad = _ansi.GRADIENT
-    return [_ansi.paint(line, grad[i % len(grad)], True) for i, line in enumerate(art)]
+    fade = _ansi.LOGO_FADE
+    return [_ansi.paint(line, fade[i % len(fade)], True) for i, line in enumerate(art)]
 
 
-_NOTE_W = 48
-
-
-def _short_note(note: str, uni: bool, width: int = _NOTE_W) -> str:
-    note = note.replace("\n", " ").strip()
+def _clip(text: str, uni: bool, width: int = _BLURB_W) -> str:
+    text = text.replace("\n", " ").strip()
     ell = "…" if uni else "..."
-    return note[: width - 1] + ell if len(note) > width else note
+    return text[: width - 1] + ell if len(text) > width else text
 
 
-def _render_status(caps: dict, version: str, *, color: bool) -> str:
+def _render_status(caps: dict, version: str, category_order, *, color: bool) -> str:
     uni = _can_encode_unicode()
     ok = "✓" if uni else "+"
     no = "✗" if uni else "x"
@@ -542,38 +548,39 @@ def _render_status(caps: dict, version: str, *, color: bool) -> str:
     out.append(_ansi.paint(tagline, _ansi.GREY, color))
     out.append("")
 
-    active = [(n, m) for n, m in mods.items() if m["configured"]]
-    locked = [(n, m) for n, m in mods.items() if not m["configured"]]
+    # Group by data-domain category; alphabetical by name within each group.
+    groups: dict[str, list] = {}
+    for name, m in mods.items():
+        groups.setdefault(m["category"], []).append((name, m))
+    ordered = list(category_order) + [c for c in groups if c not in category_order]
 
-    def _row(mark: str, mark_code: str, name: str, tier: str, detail: str) -> str:
-        tier_c = _ansi.paint(f"{tier:<12}", _TIER_COLOR.get(tier, ""), color)
-        return (f"  {_ansi.paint(mark, mark_code, color)} "
-                f"{name:<{name_w}}  {tier_c}  {detail}")
-
-    # ---- ACTIVE ----
-    hdr = f"ACTIVE {bullet} usable now ({len(active)})"
-    out.append(_ansi.paint(hdr, _ansi.GREEN + _ansi.BOLD, color))
-    for name, m in active:
-        note = _short_note(m["notes"], uni)
-        if m["expansion_keys"]:
+    def _row(name: str, m: dict) -> str:
+        cfg = m["configured"]
+        mark = _ansi.paint(ok if cfg else no, _ansi.GREEN if cfg else _ansi.RED, color)
+        tier_c = _ansi.paint(f"{_TIER_LABEL.get(m['tier'], m['tier']):<7}",
+                             _TIER_COLOR.get(m["tier"], ""), color)
+        blurb = _clip(m["blurb"], uni)
+        if not cfg:
+            joiner = " + " if m["required_env"] else " or "
+            keys = joiner.join(m["missing_keys"]) or "(unknown)"
+            suffix = _ansi.paint(f"needs {keys}", _ansi.RED, color)
+        elif m["expansion_keys"]:
             keys = " / ".join(m["expansion_keys"])
-            hint = f"  {arrow} add {keys} for more"
-            detail = f"{note:<{_NOTE_W + 1}}{_ansi.paint(hint, _ansi.YELLOW, color)}"
+            suffix = _ansi.paint(f"{arrow} add {keys}", _ansi.YELLOW, color)
         else:
-            detail = note
-        out.append(_row(ok, _ansi.GREEN, name, m["tier"], detail))
-    out.append("")
+            suffix = ""
+        detail = f"{blurb:<{_BLURB_W + 1}}{suffix}" if suffix else blurb
+        return f"  {mark} {name:<{name_w}}  {tier_c}  {detail}"
 
-    # ---- LOCKED ----
-    hdr = f"LOCKED {bullet} add a key to unlock ({len(locked)})"
-    out.append(_ansi.paint(hdr, _ansi.RED + _ansi.BOLD, color))
-    for name, m in locked:
-        spec_required = bool(m["required_env"])
-        joiner = " + " if spec_required else " or "
-        keys = joiner.join(m["missing_keys"]) or "(unknown)"
-        detail = _ansi.paint(f"needs {keys}", _ansi.YELLOW, color)
-        out.append(_row(no, _ansi.RED, name, m["tier"], detail))
-    out.append("")
+    for cat in ordered:
+        rows = sorted(groups.get(cat, []), key=lambda t: t[0])
+        if not rows:
+            continue
+        n_ok = sum(1 for _, m in rows if m["configured"])
+        header = f"{cat}  ({n_ok}/{len(rows)})"
+        out.append(_ansi.paint(header, _ansi.CYAN + _ansi.BOLD, color))
+        out.extend(_row(name, m) for name, m in rows)
+        out.append("")
 
     # ---- footer ----
     out.append(_ansi.paint("  " + rule, _ansi.GREY, color))
@@ -619,7 +626,8 @@ async def cmd_status(args) -> None:
         banner = (f"→ tckr {latest} is available (you have {__version__}) — "
                   f"`pip install -U tckr`")
         _emit(_ansi.paint(banner, _ansi.YELLOW, color))
-    _emit(_render_status(registry.capabilities(), __version__, color=color))
+    _emit(_render_status(registry.capabilities(), __version__,
+                         registry.CATEGORY_ORDER, color=color))
 
 
 # --------------------------- parser ---------------------------

@@ -248,6 +248,74 @@ REGISTRY: dict[str, ModuleSpec] = {
 }
 
 
+# ----------------------------------------------------------------------------
+# Dashboard metadata — short, human-facing blurb + data-domain category for the
+# `tckr status` view. Kept separate from each spec's verbose `notes` (which
+# drive agent tool descriptions): these are the scannable one-liners and the
+# grouping a person reads, not the detail an LLM needs. Every REGISTRY key must
+# appear here (enforced by tests); the category must be one of CATEGORY_ORDER.
+# ----------------------------------------------------------------------------
+
+CATEGORY_ORDER = (
+    "Prices & oracles",
+    "DEX & tokens",
+    "Perps & funding",
+    "On-chain & DeFi",
+    "Launchpads",
+    "Security",
+    "Social & research",
+    "TradFi & prediction",
+)
+
+# name -> (category, blurb)
+_DASHBOARD: dict[str, tuple[str, str]] = {
+    "coingecko":     ("Prices & oracles", "spot & historical prices"),
+    "pyth":          ("Prices & oracles", "on-chain oracle prices"),
+    "geckoterminal": ("DEX & tokens", "DEX pools & prices"),
+    "dexscreener":   ("DEX & tokens", "DEX pairs & search"),
+    "birdeye":       ("DEX & tokens", "Solana token analytics"),
+    "hyperliquid":   ("Perps & funding", "perp marks & funding"),
+    "coinalyze":     ("Perps & funding", "cross-exchange funding & OI"),
+    "alchemy":       ("On-chain & DeFi", "EVM wallet balances & txns"),
+    "helius":        ("On-chain & DeFi", "Solana RPC & wallets"),
+    "solscan":       ("On-chain & DeFi", "Solana block explorer"),
+    "etherscan":     ("On-chain & DeFi", "EVM explorer (~70 chains)"),
+    "wallet_pnl":    ("On-chain & DeFi", "wallet FIFO PnL"),
+    "thegraph":      ("On-chain & DeFi", "subgraph GraphQL access"),
+    "jito":          ("On-chain & DeFi", "Solana MEV & tips"),
+    "defillama":     ("On-chain & DeFi", "TVL, DEX volume, yields"),
+    "virtuals":      ("Launchpads", "AI-agent launchpad (Base)"),
+    "clanker":       ("Launchpads", "Farcaster token launcher"),
+    "bankr":         ("Launchpads", "launchpad feed"),
+    "pumpfun":       ("Launchpads", "Pump.fun launch discovery"),
+    "goplus":        ("Security", "token contract security"),
+    "honeypot":      ("Security", "honeypot / sell-tax check"),
+    "lp_lock":       ("Security", "LP-lock detection"),
+    "neynar":        ("Social & research", "Farcaster social graph"),
+    "lunarcrush":    ("Social & research", "social sentiment scores"),
+    "messari":       ("Social & research", "asset research & metrics"),
+    "tokenterminal": ("Social & research", "protocol fundamentals"),
+    "cboe":          ("TradFi & prediction", "options chains + greeks"),
+    "options":       ("TradFi & prediction", "equity/ETF options + greeks"),
+    "polymarket":    ("TradFi & prediction", "prediction-market odds"),
+}
+
+
+def category(name: str) -> str:
+    """Data-domain group for the dashboard. 'Other' if unmapped."""
+    meta = _DASHBOARD.get(name)
+    return meta[0] if meta else "Other"
+
+
+def blurb(name: str) -> str:
+    """Short human-facing one-liner for the dashboard. Falls back to notes."""
+    meta = _DASHBOARD.get(name)
+    if meta and meta[1]:
+        return meta[1]
+    spec = REGISTRY.get(name)
+    return spec.notes.split(".")[0] if spec else ""
+
+
 def _has(name: str) -> bool:
     """Truthy check on a settings attribute (env var presence)."""
     return bool(getattr(settings, name, "") or "")
@@ -371,6 +439,8 @@ def capabilities() -> dict:
         by_tier[spec.tier.value] = by_tier.get(spec.tier.value, 0) + 1
         modules[name] = {
             "tier": spec.tier.value,
+            "category": category(name),
+            "blurb": blurb(name),
             "required_env": list(spec.required_env),
             "optional_env": list(spec.optional_env),
             "configured": is_cfg,

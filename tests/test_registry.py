@@ -92,6 +92,18 @@ def test_expansion_keys_disjoint_from_missing_keys():
         assert not overlap, f"{name}: {overlap} counted as both missing and expanding"
 
 
+def test_every_module_has_dashboard_metadata():
+    """Every registry module needs a blurb + a known category for `tckr status`."""
+    from tckr import registry
+
+    for name in registry.REGISTRY:
+        assert registry.blurb(name), f"{name} has no dashboard blurb"
+        cat = registry.category(name)
+        assert cat in registry.CATEGORY_ORDER, (
+            f"{name} category {cat!r} is not in CATEGORY_ORDER"
+        )
+
+
 @pytest.mark.parametrize("module_name,expected_tier", [
     ("geckoterminal", "keyless-free"),
     ("hyperliquid",   "keyless-free"),
