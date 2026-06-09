@@ -6,6 +6,24 @@ All notable changes to `tckr` are documented here. Format roughly follows
 
 ## [Unreleased]
 
+## [0.3.2] — 2026-06-09
+
+### Changed
+- **`tckr status` dashboard polish.** The logo is now a single green hue fading
+  light→dark instead of the cyan→magenta rainbow. Each source shows a short,
+  general blurb instead of its verbose registry note. Rows are grouped into
+  data-domain categories (Prices & oracles, DEX & tokens, Perps & funding,
+  On-chain & DeFi, Launchpads, Security, Social & research, TradFi & prediction)
+  — each with a ready/total count and sorted alphabetically — replacing the flat
+  ACTIVE/LOCKED split; usable/locked state is now the per-row ✓/✗ marker plus an
+  inline `needs KEY` / `↑ add KEY` hint.
+
+### Added
+- **`registry.category(name)` / `registry.blurb(name)`** + `CATEGORY_ORDER`,
+  backed by a centralized dashboard-metadata map and surfaced per module in
+  `capabilities()` (`category`, `blurb`). The verbose `notes` are unchanged and
+  still drive agent tool descriptions.
+
 ## [0.3.1] — 2026-06-09
 
 ### Changed
