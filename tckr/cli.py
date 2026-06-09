@@ -24,7 +24,7 @@ import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from tckr import settings
+from tckr import _ansi, settings
 
 # --------------------------- update check ---------------------------
 #
@@ -468,16 +468,158 @@ async def cmd_wallet(args) -> None:
               f"(use base, eth, or solana)")
 
 
+# --------------------------- status dashboard ---------------------------
+
+# "ANSI Shadow" block logo, one line per _ansi.GRADIENT entry.
+_TCKR_LOGO = [
+    " ████████╗ ██████╗██╗  ██╗██████╗ ",
+    " ╚══██╔══╝██╔════╝██║ ██╔╝██╔══██╗",
+    "    ██║   ██║     █████╔╝ ██████╔╝",
+    "    ██║   ██║     ██╔═██╗ ██╔══██╗",
+    "    ██║   ╚██████╗██║  ██╗██║  ██║",
+    "    ╚═╝    ╚═════╝╚═╝  ╚═╝╚═╝  ╚═╝",
+]
+
+# Plain-ASCII wordmark for consoles that can't encode the block glyphs.
+_TCKR_LOGO_ASCII = [
+    "  _   _    _           _  __  _ ",
+    " | |_| |_ | |__  _ _  | |/ / | |",
+    " |  _|  _|| / / | '_| |   <  |_|",
+    "  \\__|\\__||_\\_\\ |_|   |_|\\_\\ (_)",
+]
+
+_TIER_COLOR = {
+    "keyless-free": _ansi.CYAN,
+    "keyed-free": _ansi.BLUE,
+    "keyed-paid": _ansi.ORANGE,
+}
+
+
+def _can_encode_unicode() -> bool:
+    """True if stdout can render the block-glyph logo / box rules."""
+    enc = getattr(sys.stdout, "encoding", None) or "ascii"
+    try:
+        "█╗─·↑✓✗".encode(enc)
+        return True
+    except (LookupError, UnicodeEncodeError):
+        return False
+
+
+def _render_logo(color: bool, unicode_ok: bool) -> list[str]:
+    art = _TCKR_LOGO if unicode_ok else _TCKR_LOGO_ASCII
+    if not color:
+        return list(art)
+    grad = _ansi.GRADIENT
+    return [_ansi.paint(line, grad[i % len(grad)], True) for i, line in enumerate(art)]
+
+
+_NOTE_W = 48
+
+
+def _short_note(note: str, uni: bool, width: int = _NOTE_W) -> str:
+    note = note.replace("\n", " ").strip()
+    ell = "…" if uni else "..."
+    return note[: width - 1] + ell if len(note) > width else note
+
+
+def _render_status(caps: dict, version: str, *, color: bool) -> str:
+    uni = _can_encode_unicode()
+    ok = "✓" if uni else "+"
+    no = "✗" if uni else "x"
+    arrow = "↑" if uni else ">"
+    bullet = "·" if uni else "-"
+    rule = ("─" if uni else "-") * 60
+
+    mods = caps["modules"]
+    summary = caps["summary"]
+    name_w = max((len(n) for n in mods), default=8)
+
+    out: list[str] = [""]
+    out.extend("  " + ln for ln in _render_logo(color, uni))
+    out.append("")
+    tagline = (f"  tckr v{version}  {bullet}  async, cached market data across "
+               f"{summary['total']} free APIs")
+    out.append(_ansi.paint(tagline, _ansi.GREY, color))
+    out.append("")
+
+    active = [(n, m) for n, m in mods.items() if m["configured"]]
+    locked = [(n, m) for n, m in mods.items() if not m["configured"]]
+
+    def _row(mark: str, mark_code: str, name: str, tier: str, detail: str) -> str:
+        tier_c = _ansi.paint(f"{tier:<12}", _TIER_COLOR.get(tier, ""), color)
+        return (f"  {_ansi.paint(mark, mark_code, color)} "
+                f"{name:<{name_w}}  {tier_c}  {detail}")
+
+    # ---- ACTIVE ----
+    hdr = f"ACTIVE {bullet} usable now ({len(active)})"
+    out.append(_ansi.paint(hdr, _ansi.GREEN + _ansi.BOLD, color))
+    for name, m in active:
+        note = _short_note(m["notes"], uni)
+        if m["expansion_keys"]:
+            keys = " / ".join(m["expansion_keys"])
+            hint = f"  {arrow} add {keys} for more"
+            detail = f"{note:<{_NOTE_W + 1}}{_ansi.paint(hint, _ansi.YELLOW, color)}"
+        else:
+            detail = note
+        out.append(_row(ok, _ansi.GREEN, name, m["tier"], detail))
+    out.append("")
+
+    # ---- LOCKED ----
+    hdr = f"LOCKED {bullet} add a key to unlock ({len(locked)})"
+    out.append(_ansi.paint(hdr, _ansi.RED + _ansi.BOLD, color))
+    for name, m in locked:
+        spec_required = bool(m["required_env"])
+        joiner = " + " if spec_required else " or "
+        keys = joiner.join(m["missing_keys"]) or "(unknown)"
+        detail = _ansi.paint(f"needs {keys}", _ansi.YELLOW, color)
+        out.append(_row(no, _ansi.RED, name, m["tier"], detail))
+    out.append("")
+
+    # ---- footer ----
+    out.append(_ansi.paint("  " + rule, _ansi.GREY, color))
+    by = summary["by_tier"]
+    counts = (f"  {summary['configured']}/{summary['total']} ready"
+              f"   keyless {by.get('keyless-free', 0)} {bullet}"
+              f" keyed-free {by.get('keyed-free', 0)} {bullet}"
+              f" paid {by.get('keyed-paid', 0)}"
+              f"   ({summary['expandable']} expandable)")
+    out.append(_ansi.paint(counts, _ansi.BOLD, color))
+    cta = ("  Add keys to a .env file or your shell env to unlock more — "
+           "see the README key table.")
+    out.append(_ansi.paint(cta, _ansi.GREY, color))
+    out.append("")
+    return "\n".join(out)
+
+
+def _emit(text: str) -> None:
+    """Print without ever crashing on a console that can't encode a glyph."""
+    try:
+        print(text)
+    except UnicodeEncodeError:
+        enc = getattr(sys.stdout, "encoding", None) or "ascii"
+        print(text.encode(enc, "replace").decode(enc, "replace"))
+
+
 async def cmd_status(args) -> None:
     from tckr import __version__, registry
     if args.json:
         print(json.dumps(registry.capabilities(), indent=2))
         return
+    # Best effort: UTF-8 stdout lets the block logo + ✓/✗ render on modern
+    # consoles; the renderer falls back to ASCII glyphs if this can't stick.
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
+    color = not args.no_color and _ansi.supports_color(sys.stdout)
+    if color:
+        _ansi.enable_windows_vt()
     latest = _check_for_update()
     if latest:
-        print(f"→ tckr {latest} is available (you have {__version__}) — "
-              f"`pip install -U tckr`\n")
-    print(registry.format_status())
+        banner = (f"→ tckr {latest} is available (you have {__version__}) — "
+                  f"`pip install -U tckr`")
+        _emit(_ansi.paint(banner, _ansi.YELLOW, color))
+    _emit(_render_status(registry.capabilities(), __version__, color=color))
 
 
 # --------------------------- parser ---------------------------
@@ -530,9 +672,11 @@ def _build_parser() -> argparse.ArgumentParser:
     sp.add_argument("address")
     sp.add_argument("--limit", type=int, default=20)
 
-    sp = sub.add_parser("status", help="show registered modules + which are configured")
+    sp = sub.add_parser("status", help="capability dashboard — what's usable now + what a key unlocks")
     sp.add_argument("--json", action="store_true",
-                     help="emit JSON instead of the human-readable table")
+                     help="emit JSON instead of the human-readable dashboard")
+    sp.add_argument("--no-color", action="store_true",
+                     help="disable ANSI color (also honors NO_COLOR / non-TTY)")
 
     sp = sub.add_parser("update", help="upgrade tckr to the latest PyPI release")
     sp.add_argument("--check", action="store_true",

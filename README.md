@@ -14,6 +14,12 @@ pip install tckr[agent-mcp]   # + universal MCP server for any LLM
 pip install tckr[agent-all]   # + all four agent adapters
 ```
 
+Then run `tckr status` to see your capability dashboard — every source colour-coded by what's usable **right now** (most are keyless), what a free key would **unlock**, and what an optional key would **expand**:
+
+```bash
+tckr status
+```
+
 ```python
 import asyncio
 from tckr import quotes

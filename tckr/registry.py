@@ -286,6 +286,23 @@ def missing_keys(name: str) -> list[str]:
     return list(spec.optional_env)
 
 
+def expansion_keys(name: str) -> list[str]:
+    """Unset optional keys that would EXPAND an already-usable module.
+
+    Distinct from `missing_keys`: these keys are not needed to use the module
+    (it's already `configured()`), but setting them unlocks extra capability —
+    e.g. `coingecko` works keyless yet a DEMO/PRO key raises the rate limit, and
+    an already-keyed any-of module like `pumpfun` gains more discovery sources.
+
+    Returns [] when the module isn't configured (there those optional keys are
+    *enabling*, surfaced by `missing_keys`) or has no unset optional keys.
+    """
+    spec = REGISTRY.get(name)
+    if spec is None or not configured(name):
+        return []
+    return [k for k in spec.optional_env if not _has(k)]
+
+
 def tier_tag(name: str) -> str:
     """Compact tag prefix for a tool description.
 
@@ -327,6 +344,7 @@ def capabilities() -> dict:
             "optional_env": [],
             "configured": true,
             "missing_keys": [],
+            "expansion_keys": [],
             "notes": "Cross-exchange perps aggregator…"
           },
           ...
@@ -334,6 +352,7 @@ def capabilities() -> dict:
         "summary": {
           "total": 17,
           "configured": 9,
+          "expandable": 4,
           "by_tier": {"keyless-free": 8, "keyed-free": 8, "keyed-paid": 1},
         }
       }
@@ -341,10 +360,14 @@ def capabilities() -> dict:
     modules: dict[str, dict] = {}
     by_tier: dict[str, int] = {}
     n_configured = 0
+    n_expandable = 0
     for name, spec in REGISTRY.items():
         is_cfg = configured(name)
         if is_cfg:
             n_configured += 1
+        exp = expansion_keys(name)
+        if exp:
+            n_expandable += 1
         by_tier[spec.tier.value] = by_tier.get(spec.tier.value, 0) + 1
         modules[name] = {
             "tier": spec.tier.value,
@@ -352,6 +375,7 @@ def capabilities() -> dict:
             "optional_env": list(spec.optional_env),
             "configured": is_cfg,
             "missing_keys": missing_keys(name),
+            "expansion_keys": exp,
             "notes": spec.notes,
         }
     return {
@@ -359,6 +383,7 @@ def capabilities() -> dict:
         "summary": {
             "total": len(REGISTRY),
             "configured": n_configured,
+            "expandable": n_expandable,
             "by_tier": by_tier,
         },
     }

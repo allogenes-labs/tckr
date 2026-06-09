@@ -68,6 +68,30 @@ def test_capabilities_returns_serializable_dict():
     json.dumps(caps)
 
 
+def test_capabilities_exposes_expansion_fields():
+    """The status dashboard relies on per-module expansion_keys + the summary count."""
+    from tckr import registry
+
+    caps = registry.capabilities()
+    assert "expandable" in caps["summary"]
+    for name, mod in caps["modules"].items():
+        assert "expansion_keys" in mod, f"{name} missing expansion_keys"
+        # expansion only applies to already-usable modules
+        if mod["expansion_keys"]:
+            assert mod["configured"], f"{name} reports expansion but isn't configured"
+    n_expandable = sum(1 for m in caps["modules"].values() if m["expansion_keys"])
+    assert caps["summary"]["expandable"] == n_expandable
+
+
+def test_expansion_keys_disjoint_from_missing_keys():
+    """A key is either enabling (missing) or expanding — never both at once."""
+    from tckr import registry
+
+    for name in registry.REGISTRY:
+        overlap = set(registry.expansion_keys(name)) & set(registry.missing_keys(name))
+        assert not overlap, f"{name}: {overlap} counted as both missing and expanding"
+
+
 @pytest.mark.parametrize("module_name,expected_tier", [
     ("geckoterminal", "keyless-free"),
     ("hyperliquid",   "keyless-free"),
