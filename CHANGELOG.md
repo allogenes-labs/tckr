@@ -6,6 +6,24 @@ All notable changes to `tckr` are documented here. Format roughly follows
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-06-09
+
+### Changed
+- **`tckr status` is now a colored onboarding dashboard.** Replaces the flat
+  monochrome table with a grouped capability view designed to be the first
+  thing a new user runs: a gradient block logo, an **ACTIVE** section (usable
+  right now) with inline "↑ add KEY for more" hints on modules an optional key
+  would expand, and a **LOCKED** section listing exactly which key each
+  unconfigured module needs. Footer shows ready/keyless/keyed/paid counts plus
+  how many modules are expandable. Color auto-disables for non-TTY / `NO_COLOR`;
+  `--no-color` forces plain text. Zero new dependencies.
+
+### Added
+- **`registry.expansion_keys(name)`** — unset optional env vars that *expand* an
+  already-usable module (distinct from `missing_keys`, which *enable* an
+  unconfigured one). `capabilities()` now carries `expansion_keys` per module
+  and an `expandable` count in its summary.
+
 ## [0.3.0] — 2026-06-05
 
 ### Added
