@@ -160,6 +160,50 @@ async def _t_hl_perp(args: dict) -> dict:
 
 
 @register_tool(
+    "hl_universe",
+    "The full Hyperliquid perps universe (~230 symbols) ranked by 24h notional "
+    "volume, paged. Each row: symbol, mark_px, day_change_pct, funding_apr_pct, "
+    "funding_above_baseline_apr_pct, open_interest_usd, day_notional_volume_usd, "
+    "max_leverage. Use to SCAN for candidates — momentum (sort is by activity), "
+    "carry (extreme funding_above_baseline), or new listings — instead of "
+    "probing one symbol at a time with hl_perp. Page with `offset` (rows are "
+    "volume-ranked, so offset=25 starts at the 26th most active). Snapshot is "
+    "TTL-cached, so repeat/paged calls within a turn are free.",
+    module="hyperliquid",
+    schema={
+        "type": "object",
+        "properties": {
+            "limit": {"type": "integer", "description": "Rows to return (max 25). Default 25."},
+            "offset": {"type": "integer", "description": "Skip the first N volume-ranked rows. Default 0."},
+        },
+    },
+)
+async def _t_hl_universe(args: dict) -> list:
+    from tckr import hyperliquid as hl
+    rows = await hl.perps_universe() or []
+    ranked = sorted(
+        (r for r in rows if isinstance(r, dict) and not r.get("is_delisted")),
+        key=lambda r: r.get("day_notional_volume_usd") or 0.0,
+        reverse=True,
+    )
+    compact = [
+        {
+            "symbol": r.get("symbol"),
+            "mark_px": r.get("mark_px"),
+            "day_change_pct": r.get("day_change_pct"),
+            "funding_apr_pct": r.get("funding_apr_pct"),
+            "funding_above_baseline_apr_pct": r.get("funding_above_baseline_apr_pct"),
+            "open_interest_usd": r.get("open_interest_usd"),
+            "day_notional_volume_usd": r.get("day_notional_volume_usd"),
+            "max_leverage": r.get("max_leverage"),
+        }
+        for r in ranked
+    ]
+    offset = max(0, int(args.get("offset") or 0))
+    return _cap(compact[offset:], args.get("limit"))
+
+
+@register_tool(
     "hl_funding_history",
     "Recent hourly funding rates for a Hyperliquid perp. Returns chronological "
     "list of {t, funding_rate_hourly, funding_apr_pct, "
