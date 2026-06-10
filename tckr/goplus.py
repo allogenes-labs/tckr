@@ -124,16 +124,18 @@ def _normalize_security_row(raw: dict) -> dict:
     out["owner_balance"] = _f(raw.get("owner_balance"))
     out["owner_percent"] = _f(raw.get("owner_percent"))
 
-    # Top10 holder concentration (sum of top10 percentages).
+    # Top10 holder concentration (sum of top10 percentages). GoPlus reports
+    # `percent` as a fraction of 1 (0.18 = 18%); we expose 0-100 to match the
+    # `_pct` suffix. None (not 0.0) when no percent fields were present.
     holders = raw.get("holders") or []
     if isinstance(holders, list):
-        pct_sum = 0.0
+        pct_sum = None
         for h in holders[:10]:
             if isinstance(h, dict):
                 p = _f(h.get("percent"))
                 if p is not None:
-                    pct_sum += p
-        out["top10_holder_pct"] = pct_sum if holders else None
+                    pct_sum = (pct_sum or 0.0) + p * 100.0
+        out["top10_holder_pct"] = pct_sum
         out["top_holders"] = [
             {
                 "address": h.get("address"),
@@ -158,14 +160,20 @@ def _normalize_security_row(raw: dict) -> dict:
             }
             for h in lp_holders[:5] if isinstance(h, dict)
         ]
-        # Convenience: % of LP that's locked or burnt.
-        locked_pct = 0.0
-        for h in lp_holders:
-            if isinstance(h, dict) and _b(h.get("is_locked")):
-                p = _f(h.get("percent"))
-                if p is not None:
-                    locked_pct += p
-        out["lp_locked_pct"] = locked_pct if lp_holders else None
+        # Convenience: % of LP that's locked or burnt (0-100; GoPlus fractions
+        # are scaled up). A list with no percent data at all stays None —
+        # 0.0 would read as "confirmed nothing locked".
+        locked_pct = None
+        saw_pct = any(isinstance(h, dict) and _f(h.get("percent")) is not None
+                      for h in lp_holders)
+        if saw_pct:
+            locked_pct = 0.0
+            for h in lp_holders:
+                if isinstance(h, dict) and _b(h.get("is_locked")):
+                    p = _f(h.get("percent"))
+                    if p is not None:
+                        locked_pct += p * 100.0
+        out["lp_locked_pct"] = locked_pct
 
     return out
 

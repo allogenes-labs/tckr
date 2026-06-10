@@ -129,7 +129,13 @@ def apply_fifo(transfers: list[dict],
     Per-token output:
         {qty_open, qty_total_bought, qty_total_sold, avg_cost_basis_usd,
          realized_pnl_usd, unrealized_pnl_usd, current_price_usd, n_buys,
-         n_sells, first_buy_iso, last_activity_iso}
+         n_sells, first_buy_iso, last_activity_iso, qty_unknown_pnl,
+         basis_incomplete}
+
+    Rows with usd_value=None (e.g. token-for-token swap legs) have unknowable
+    cost basis / proceeds. Those quantities are tracked but excluded from
+    realized/unrealized PnL — `basis_incomplete: True` flags affected tokens
+    so callers don't read the PnL numbers as complete.
     """
     prices = current_prices or {}
     lots: dict[str, deque] = defaultdict(deque)  # token -> deque of {qty, cost_per_unit}
@@ -137,7 +143,7 @@ def apply_fifo(transfers: list[dict],
         "qty_total_bought": 0.0, "qty_total_sold": 0.0,
         "realized_pnl_usd": 0.0, "n_buys": 0, "n_sells": 0,
         "first_buy_iso": None, "last_activity_iso": None,
-        "total_cost_basis_usd": 0.0,
+        "total_cost_basis_usd": 0.0, "qty_unknown_pnl": 0.0,
     })
 
     for ev in sorted(transfers, key=lambda r: r.get("ts") or ""):
@@ -152,7 +158,9 @@ def apply_fifo(transfers: list[dict],
         s["last_activity_iso"] = ts
 
         if side == "buy":
-            cost_per = (usd / qty) if (usd is not None and qty > 0) else 0.0
+            # None = unknown basis (e.g. token-for-token swap), NOT $0 —
+            # booking $0 would turn the eventual sale into pure fake gain.
+            cost_per = (usd / qty) if usd is not None else None
             lots[tok].append({"qty": qty, "cost_per_unit": cost_per})
             s["qty_total_bought"] += qty
             s["total_cost_basis_usd"] += (usd or 0.0)
@@ -160,13 +168,17 @@ def apply_fifo(transfers: list[dict],
             if s["first_buy_iso"] is None:
                 s["first_buy_iso"] = ts
         else:  # sell
-            proceeds_per = (usd / qty) if (usd is not None and qty > 0) else 0.0
+            proceeds_per = (usd / qty) if (usd is not None and qty > 0) else None
             remaining = qty
             while remaining > 0 and lots[tok]:
                 lot = lots[tok][0]
                 consume = min(lot["qty"], remaining)
-                pnl_per = proceeds_per - lot["cost_per_unit"]
-                s["realized_pnl_usd"] += pnl_per * consume
+                if proceeds_per is None or lot["cost_per_unit"] is None:
+                    # Either leg unpriced → PnL for this slice is unknowable.
+                    s["qty_unknown_pnl"] += consume
+                else:
+                    pnl_per = proceeds_per - lot["cost_per_unit"]
+                    s["realized_pnl_usd"] += pnl_per * consume
                 lot["qty"] -= consume
                 remaining -= consume
                 if lot["qty"] <= 1e-12:
@@ -175,20 +187,28 @@ def apply_fifo(transfers: list[dict],
             # proceeds as pure gain (basis-less). Real shorts on these chains
             # are rare; this usually means we missed an earlier buy.
             if remaining > 1e-12:
-                s["realized_pnl_usd"] += proceeds_per * remaining
+                if proceeds_per is not None:
+                    s["realized_pnl_usd"] += proceeds_per * remaining
+                else:
+                    s["qty_unknown_pnl"] += remaining
             s["qty_total_sold"] += qty
             s["n_sells"] += 1
 
-    # Finalize per-token rows.
+    # Finalize per-token rows. Unknown-basis lots are excluded from the basis
+    # average and unrealized PnL; `basis_incomplete` flags their presence.
     out: dict[str, dict] = {}
     for tok, s in stats.items():
         qty_open = sum(lot["qty"] for lot in lots[tok])
-        open_basis_usd = sum(lot["qty"] * lot["cost_per_unit"] for lot in lots[tok])
-        avg_basis = (open_basis_usd / qty_open) if qty_open > 1e-12 else None
+        known = [lot for lot in lots[tok] if lot["cost_per_unit"] is not None]
+        qty_open_known = sum(lot["qty"] for lot in known)
+        open_basis_usd = sum(lot["qty"] * lot["cost_per_unit"] for lot in known)
+        avg_basis = (open_basis_usd / qty_open_known) if qty_open_known > 1e-12 else None
         price = prices.get(tok)
         unrealized = None
-        if price is not None and qty_open > 1e-12 and avg_basis is not None:
-            unrealized = (price - avg_basis) * qty_open
+        if price is not None and qty_open_known > 1e-12 and avg_basis is not None:
+            unrealized = (price - avg_basis) * qty_open_known
+        basis_incomplete = (qty_open - qty_open_known > 1e-12
+                            or s["qty_unknown_pnl"] > 1e-12)
         out[tok] = {
             "qty_open": qty_open,
             "qty_total_bought": s["qty_total_bought"],
@@ -201,6 +221,8 @@ def apply_fifo(transfers: list[dict],
             "n_sells": s["n_sells"],
             "first_buy_iso":      s["first_buy_iso"],
             "last_activity_iso":  s["last_activity_iso"],
+            "qty_unknown_pnl":    s["qty_unknown_pnl"],
+            "basis_incomplete":   basis_incomplete,
             "total_pnl_usd": (s["realized_pnl_usd"]
                               + (unrealized if unrealized is not None else 0.0)),
         }
@@ -461,6 +483,8 @@ async def wallet_pnl(addresses: str | list[str], *,
                 "realized_pnl_usd": realized_total,
                 "unrealized_pnl_usd": unrealized_total,
                 "total_pnl_usd": realized_total + unrealized_total,
+                "basis_incomplete": any(r.get("basis_incomplete")
+                                        for r in per_token.values()),
                 "ts": _now_iso(),
             },
         }

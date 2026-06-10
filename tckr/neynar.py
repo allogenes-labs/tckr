@@ -148,6 +148,11 @@ def _parse_token(t: dict) -> dict:
     """
     addr = t.get("contract_address") or t.get("address")
     net = t.get("network") or t.get("chain")
+    # `price` arrives as either a bare number (trending feed) or {usd: ...}.
+    price = t.get("price")
+    price_usd = t.get("price_usd")
+    if price_usd is None:
+        price_usd = price.get("usd") if isinstance(price, dict) else price
     return {
         "address": addr,
         "network": net,
@@ -155,8 +160,7 @@ def _parse_token(t: dict) -> dict:
         "name": t.get("name"),
         "decimals": _i(t.get("decimals")),
         "image_url": t.get("image_url") or t.get("logo_url"),
-        "price_usd": _f(t.get("price_usd") or (t.get("price") or {}).get("usd")
-                         if isinstance(t.get("price"), dict) else t.get("price_usd")),
+        "price_usd": _f(price_usd),
         "market_cap_usd": _f(t.get("market_cap")),
         "volume_24h_usd": _f(t.get("volume_24h") or t.get("volume_24h_usd")),
         "price_change_24h_pct": _f(t.get("price_change_24h") or t.get("price_change_24h_pct")),

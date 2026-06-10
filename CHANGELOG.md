@@ -6,6 +6,77 @@ All notable changes to `tckr` are documented here. Format roughly follows
 
 ## [Unreleased]
 
+## [0.3.3] — 2026-06-10
+
+Bug-fix release from a full-codebase audit. Several fixes change returned
+values — they correct numbers that were materially wrong.
+
+### Fixed
+- **coinalyze: funding APRs were inflated up to ~800×.** Coinalyze returns
+  funding `value` in **percent per the exchange's native funding interval**
+  (verified live against OKX), not as an hourly fraction. `_parse_funding_row`
+  now annualizes per-venue (8h default; 1h for Hyperliquid/dYdX/Kraken/Vertex/
+  Lighter) and returns `funding_rate_pct` + `funding_interval_hours` instead of
+  the misnamed `funding_rate_hourly`. `funding_aggregate` /
+  `funding_extremes` / `cz_*` agent tools inherit the corrected APRs.
+- **coinalyze: exchange code map was mostly wrong.** 7 of 11 hardcoded entries
+  mislabeled venues (K labeled Hyperliquid but is Kraken; H is Hyperliquid, not
+  Huobi; C is Coinbase, not Deribit; F is Bitfinex, not Bitget; Y is Gate.io,
+  not Kraken; G is Gemini; D is Bitforex). Replaced with the full 28-entry map
+  from the authoritative `/exchanges` endpoint — cross-exchange funding reads
+  were attributing rates to the wrong venues.
+- **goplus: holder-concentration and LP-lock risk warnings were broken in
+  opposite directions.** GoPlus reports holder `percent` as fractions of 1, but
+  `_risk_summary` compared the sums against 70/50 — so the top-10 concentration
+  warning could *never* fire and the "only X% of LP locked" warning *always*
+  fired. `top10_holder_pct` and `lp_locked_pct` are now 0–100 as the `_pct`
+  suffix implies, and stay `None` (unknown) instead of `0.0` when GoPlus omits
+  percent data. `birdeye.token_security` scales its `top10_holder_pct` /
+  `top10_user_pct` the same way for cross-module consistency.
+- **pumpfun: `live_trades()` returned only buys.** The Bitquery query filtered
+  on `Buy.Currency == mint` and hard-coded `side: "buy"`, so sell-side trades
+  (dumps) were invisible and buy/sell pressure reads were meaningless. Now runs
+  mirrored buy/sell queries concurrently and merges them newest-first.
+- **wallet_pnl: unknown cost basis no longer booked as $0.** Token-for-token
+  swap legs (no SOL/stable side) have unknowable USD value; FIFO previously
+  treated them as $0 basis, booking the full proceeds of the eventual sale as
+  realized gain (or a full loss on unpriced sells). Unknown-value quantities
+  are now excluded from realized/unrealized PnL and surfaced via
+  `qty_unknown_pnl` + `basis_incomplete` per token and in the wallet summary.
+- **neynar: `price_usd` was `None` for bare-number `price` fields.** An
+  operator-precedence bug made the fallback branch dead code, dropping the
+  price on trending-feed rows.
+- **options/cboe: DTE now uses the US/Eastern trading date** instead of UTC,
+  which overstated `dte` by one between midnight UTC and ET market hours. Adds
+  a `tzdata` dependency on Windows.
+- **options: cascades no longer discard a valid empty Alpaca result** when CBOE
+  can't answer either; empty-chain fallback to CBOE (Alpaca has no index
+  options) is now documented.
+- **agent_toolkit: `cg_market_chart` crashed on `days='max'`** despite its own
+  schema advertising it (`int()` cast). Note CoinGecko's public tier now caps
+  history at 365 days; the description says so.
+- **agent_toolkit: MCP server now signals tool failures via `isError`.**
+  Exceptions are raised (the SDK converts them to
+  `CallToolResult(isError=True)`) instead of returned as ordinary text an LLM
+  could mistake for data.
+- **agent_toolkit: LangChain adapter maps `array` schemas to `list[...]`**
+  (was `Any`, degrading the tool schemas LangChain shows the model) and
+  handles union types like `["integer", "string"]`.
+- **agent_toolkit: `limit=0` no longer means "give me the max"** in `_cap`.
+- **polymarket: `book()` no longer caches a fully empty book** for the whole
+  TTL (thin CLOB books clear and refill between fills).
+- **lunarcrush: 200-OK error envelopes are no longer cached** as if they were
+  data.
+- **etherscan: `token_transfers` rows** return `ts` as ISO 8601 (was a raw
+  epoch string, unlike every other module) and `block` as an int.
+- **jito: `HELIUS_API_KEY` moved out of the URL string** into request params,
+  matching `helius.py` (keeps the key out of exception URLs and URL logs).
+  `_http.post_json` gained a `params=` passthrough.
+- **registry: a typo'd `required_env`/`optional_env` name now raises** instead
+  of silently reporting the module as permanently unconfigured.
+- **cli: update-check cache reads/writes pin `encoding="utf-8"`** (was
+  locale-dependent on Windows).
+
 ## [0.3.2] — 2026-06-09
 
 ### Changed

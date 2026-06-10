@@ -54,6 +54,7 @@ IDL revisions of the bonding curve account itself.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 
@@ -235,7 +236,7 @@ query TopTraders($mint: String!, $limit: Int!) {
 """
 
 
-_BITQUERY_LIVE_TRADES = """
+_BITQUERY_LIVE_TRADES_BUYS = """
 query LiveTrades($mint: String!, $limit: Int!) {
   Solana {
     DEXTrades(
@@ -253,6 +254,32 @@ query LiveTrades($mint: String!, $limit: Int!) {
       Trade {
         Buy  { Account { Address } Amount Price PriceInUSD }
         Sell { Account { Address } Amount AmountInUSD Price }
+      }
+    }
+  }
+}
+"""
+
+# Mirror of the buys query with the mint on the Sell side: someone selling the
+# token back for SOL. USD fields move with the legs (SOL leg = Buy here).
+_BITQUERY_LIVE_TRADES_SELLS = """
+query LiveTrades($mint: String!, $limit: Int!) {
+  Solana {
+    DEXTrades(
+      where: {
+        Trade: {
+          Dex: { ProtocolName: { is: "pump" } }
+          Sell: { Currency: { MintAddress: { is: $mint } } }
+        }
+      }
+      limit: { count: $limit }
+      orderBy: { descending: Block_Time }
+    ) {
+      Block { Time }
+      Transaction { Signature }
+      Trade {
+        Buy  { Account { Address } Amount AmountInUSD Price }
+        Sell { Account { Address } Amount Price PriceInUSD }
       }
     }
   }
@@ -623,42 +650,58 @@ async def live_trades(mint: str, *, limit: int = 50) -> list[dict]:
     if cached is not None:
         return cached
 
-    data = await _bitquery_post(_BITQUERY_LIVE_TRADES,
-                                 {"mint": mint, "limit": capped},
-                                 label=f"bitquery live_trades {mint[:8]}")
-    rows: list[dict] = []
-    if isinstance(data, dict):
+    buys_data, sells_data = await asyncio.gather(
+        _bitquery_post(_BITQUERY_LIVE_TRADES_BUYS,
+                       {"mint": mint, "limit": capped},
+                       label=f"bitquery live_trades buys {mint[:8]}"),
+        _bitquery_post(_BITQUERY_LIVE_TRADES_SELLS,
+                       {"mint": mint, "limit": capped},
+                       label=f"bitquery live_trades sells {mint[:8]}"),
+    )
+
+    def _parse(data, side: str) -> list[dict]:
+        out: list[dict] = []
+        if not isinstance(data, dict):
+            return out
         for r in (data.get("Solana") or {}).get("DEXTrades") or []:
             if not isinstance(r, dict):
                 continue
             blk = r.get("Block") or {}
             tx  = r.get("Transaction") or {}
             trade = r.get("Trade") or {}
-            buy  = trade.get("Buy") or {}
-            sell = trade.get("Sell") or {}
-            # Caller filtered to trades where Buy.Currency == mint, so
-            # "buy" here means someone acquired this token by spending SOL.
-            # USD value: prefer Sell.AmountInUSD (SOL leg — has a fresh price)
-            # over Buy.AmountInUSD (new token leg — often unpriced). Fall back
-            # to Buy.PriceInUSD * Buy.Amount if neither is available.
-            usd_amount = _f(sell.get("AmountInUSD"))
-            tok_amount = _f(buy.get("Amount"))
-            price_usd  = _f(buy.get("PriceInUSD"))
+            # The mint sits on the Buy leg for buys, the Sell leg for sells;
+            # the other leg is SOL. USD value: prefer the SOL leg's
+            # AmountInUSD (fresh price) over the token leg's PriceInUSD *
+            # Amount (often unpriced for new tokens).
+            if side == "buy":
+                tok_leg = trade.get("Buy") or {}
+                sol_leg = trade.get("Sell") or {}
+            else:
+                tok_leg = trade.get("Sell") or {}
+                sol_leg = trade.get("Buy") or {}
+            usd_amount = _f(sol_leg.get("AmountInUSD"))
+            tok_amount = _f(tok_leg.get("Amount"))
+            price_usd  = _f(tok_leg.get("PriceInUSD"))
             if usd_amount in (None, 0.0) and price_usd and tok_amount:
                 usd_amount = price_usd * tok_amount
             elif price_usd is None and usd_amount and tok_amount:
                 price_usd = usd_amount / tok_amount
-            rows.append({
+            out.append({
                 "ts": _ts_to_iso(blk.get("Time")),
                 "signature": tx.get("Signature"),
-                "side": "buy",
-                "wallet": (buy.get("Account") or {}).get("Address"),
+                "side": side,
+                "wallet": (tok_leg.get("Account") or {}).get("Address"),
                 "token_amount": tok_amount,
-                "sol_amount":   _f(sell.get("Amount")),
+                "sol_amount":   _f(sol_leg.get("Amount")),
                 "usd_amount":   usd_amount,
-                "price_sol":    _f(buy.get("Price")),
+                "price_sol":    _f(tok_leg.get("Price")),
                 "price_usd":    price_usd,
             })
+        return out
+
+    rows = _parse(buys_data, "buy") + _parse(sells_data, "sell")
+    rows.sort(key=lambda r: r["ts"] or "", reverse=True)
+    rows = rows[:capped]
     _cache.put(ck, rows)
     return rows
 

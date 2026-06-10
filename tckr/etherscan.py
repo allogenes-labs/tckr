@@ -32,6 +32,7 @@ for an agent / research tool are):
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 
 from tckr import _http, settings
 from tckr.cache import TTLCache
@@ -142,7 +143,9 @@ async def token_transfers(address: str, chain: str | int = "ethereum", *,
     out = []
     for t in r:
         out.append({
-            "ts":           t.get("timeStamp"),
+            # Etherscan sends epoch-seconds strings; normalize to the ISO
+            # form every other tckr module returns for `ts`.
+            "ts":           _epoch_to_iso(t.get("timeStamp")),
             "hash":         t.get("hash"),
             "from":         t.get("from"),
             "to":           t.get("to"),
@@ -151,7 +154,7 @@ async def token_transfers(address: str, chain: str | int = "ethereum", *,
             "token_symbol": t.get("tokenSymbol"),
             "token_decimal": t.get("tokenDecimal"),
             "contract":     t.get("contractAddress"),
-            "block":        t.get("blockNumber"),
+            "block":        _to_i(t.get("blockNumber")),
         })
     return out
 
@@ -230,4 +233,19 @@ def _to_f(v):
     try:
         return float(v) if v is not None else None
     except (TypeError, ValueError):
+        return None
+
+
+def _to_i(v):
+    try:
+        return int(v) if v is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _epoch_to_iso(ts) -> str | None:
+    """Epoch-seconds (int or string) → ISO 8601 UTC, None if unparseable."""
+    try:
+        return datetime.fromtimestamp(int(ts), tz=UTC).isoformat()
+    except (TypeError, ValueError, OSError):
         return None

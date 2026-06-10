@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tckr"
-version = "0.3.2"
+version = "0.3.3"
 description = "Async, cached, gracefully-degrading aggregator over the major free crypto data APIs (DEX, perps, TVL, on-chain, social, launchpads, MEV) — plus an agent toolkit that exposes the data to any LLM platform via MCP, the Claude Agent SDK, OpenAI function calling, or LangChain."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -37,6 +37,9 @@ dependencies = [
     "solders>=0.21",
     "eth-abi>=5.0",
     "eth-hash[pycryptodome]>=0.7",
+    # zoneinfo tz database for platforms without a system one (Windows) —
+    # options DTE math needs the US/Eastern trading date.
+    "tzdata>=2024.1; platform_system == 'Windows'",
 ]
 
 [project.optional-dependencies]

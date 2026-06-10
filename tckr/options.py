@@ -32,7 +32,7 @@ Docs: https://docs.alpaca.markets/reference/optionchain
 from __future__ import annotations
 
 import logging
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 from tckr import _http, settings
 from tckr.cache import TTLCache
@@ -123,15 +123,25 @@ def build_occ(underlying: str, expiration: str, type_: str, strike: float) -> st
     return f"{root}{exp:%y%m%d}{cp}{strike_int:08d}"
 
 
+def _us_market_date() -> date:
+    """Today in US/Eastern. DTE is a US-market calendar concept — the UTC date
+    runs a day ahead between midnight UTC and ET market hours."""
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.now(ZoneInfo("America/New_York")).date()
+    except Exception:  # noqa: BLE001 — no tz database; EST approximation
+        return (datetime.now(UTC) - timedelta(hours=5)).date()
+
+
 def _dte(expiration: str | None) -> int | None:
-    """Calendar days to expiration from today (UTC). None if unparseable."""
+    """Calendar days to expiration from today (US/Eastern). None if unparseable."""
     if not expiration:
         return None
     try:
         exp = date.fromisoformat(expiration)
     except ValueError:
         return None
-    return (exp - datetime.now(UTC).date()).days
+    return (exp - _us_market_date()).days
 
 
 def _parse_contract(symbol: str, snap: dict) -> dict:
@@ -385,21 +395,30 @@ async def chain_cascade(underlying: str, **kwargs) -> dict | None:
     Accepts the same narrowing kwargs as `option_chain` (expiration, exp_gte,
     exp_lte, type, strike_gte, strike_lte). CBOE ignores Alpaca-only kwargs
     (`feed`, `limit`, `max_pages`).
+
+    An *empty* Alpaca chain also falls through to CBOE — Alpaca has no index
+    options, so empty usually means "no coverage" rather than "no contracts
+    match". If CBOE can't answer either, the empty Alpaca result is returned
+    (it's still an authoritative answer for the filter the caller asked for).
     """
     from tckr import cboe
 
+    alpaca_res = None
     if _alpaca_ready():
-        res = await option_chain(underlying, **kwargs)
-        if res is not None and res.get("count"):
-            res["source"] = "alpaca"
-            return res
+        alpaca_res = await option_chain(underlying, **kwargs)
+        if alpaca_res is not None and alpaca_res.get("count"):
+            alpaca_res["source"] = "alpaca"
+            return alpaca_res
     cboe_kwargs = {k: v for k, v in kwargs.items()
                    if k in ("expiration", "exp_gte", "exp_lte",
                             "type", "strike_gte", "strike_lte")}
     res = await cboe.option_chain(underlying, **cboe_kwargs)
     if res is not None:
         res["source"] = "cboe"
-    return res
+        return res
+    if alpaca_res is not None:
+        alpaca_res["source"] = "alpaca"
+    return alpaca_res
 
 
 async def snapshot_cascade(symbols: str | list[str]) -> list[dict]:
@@ -417,12 +436,16 @@ async def expirations_cascade(underlying: str) -> dict | None:
     """Expiration ladder via Alpaca if keyed, else keyless CBOE. Adds `source`."""
     from tckr import cboe
 
+    alpaca_res = None
     if _alpaca_ready():
-        res = await expirations(underlying)
-        if res is not None and res.get("expirations"):
-            res["source"] = "alpaca"
-            return res
+        alpaca_res = await expirations(underlying)
+        if alpaca_res is not None and alpaca_res.get("expirations"):
+            alpaca_res["source"] = "alpaca"
+            return alpaca_res
     res = await cboe.expirations(underlying)
     if res is not None:
         res["source"] = "cboe"
-    return res
+        return res
+    if alpaca_res is not None:
+        alpaca_res["source"] = "alpaca"
+    return alpaca_res

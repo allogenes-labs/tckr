@@ -479,7 +479,11 @@ async def book(token_id: str) -> dict | None:
             "bids": bids,
             "asks": asks,
         }
-        _cache.put(key, shaped)
+        # Don't cache a fully empty book: thin markets clear and refill
+        # between fills, and a cached empty book makes effective_fill report
+        # total illiquidity for the rest of the TTL.
+        if bids or asks:
+            _cache.put(key, shaped)
         return shaped
 
 

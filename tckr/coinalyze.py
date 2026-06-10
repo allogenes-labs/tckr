@@ -32,22 +32,50 @@ log = logging.getLogger("tckr.coinalyze")
 _BASE = "https://api.coinalyze.net/v1"
 _cache = TTLCache()
 
-# Exchange code → display name. Coinalyze ships a /exchanges endpoint with the
-# full mapping; this table is the practical subset most callers care about.
-# We resolve unknown codes lazily via _exchanges_cache().
+# Exchange code → display name, mirroring the authoritative /exchanges
+# endpoint (fetched 2026-06-10). Unknown codes fall back to the raw code.
 _KNOWN_EXCHANGES: dict[str, str] = {
     "A": "Binance",
     "6": "Bybit",
     "3": "OKX",
-    "F": "Bitget",
-    "K": "Hyperliquid",
     "0": "BitMEX",
-    "Y": "Kraken",
-    "C": "Deribit",
-    "G": "Gate.io",
-    "H": "Huobi",
-    "D": "dYdX",
+    "2": "Deribit",
+    "4": "Huobi",
+    "7": "Phemex",
+    "8": "dYdX",
+    "B": "Bitstamp",
+    "C": "Coinbase",
+    "D": "Bitforex",
+    "E": "MercadoBitcoin",
+    "F": "Bitfinex",
+    "G": "Gemini",
+    "H": "Hyperliquid",
+    "I": "Bit2c",
+    "J": "Luno",
+    "K": "Kraken",
+    "L": "BitFlyer",
+    "M": "BtcMarkets",
+    "N": "Independent Reserve",
+    "P": "Poloniex",
+    "S": "Aster",
+    "T": "Lighter",
+    "U": "Bithumb",
+    "V": "Vertex",
+    "W": "WOO X",
+    "Y": "Gate.io",
 }
+
+# Coinalyze reports funding `value` in PERCENT per the exchange's native
+# funding interval (verified live against OKX: value == exchange fraction
+# * 100). Most venues fund every 8h; the perp DEXes fund hourly.
+_FUNDING_INTERVAL_H: dict[str, int] = {
+    "H": 1,   # Hyperliquid
+    "8": 1,   # dYdX
+    "K": 1,   # Kraken (continuous, quoted per hour)
+    "V": 1,   # Vertex
+    "T": 1,   # Lighter
+}
+_DEFAULT_FUNDING_INTERVAL_H = 8
 
 
 def _now_iso() -> str:
@@ -160,13 +188,15 @@ async def markets(base: str | None = None) -> list[dict]:
 def _parse_funding_row(r: dict) -> dict:
     sym = r.get("symbol")
     _, code = _symbol_parts(sym or "")
-    fr = _f(r.get("value"))
-    apr_pct = (fr * 24 * 365 * 100.0) if fr is not None else None
+    pct = _f(r.get("value"))  # percent per funding interval
+    interval_h = _FUNDING_INTERVAL_H.get(code, _DEFAULT_FUNDING_INTERVAL_H)
+    apr_pct = (pct * (24 / interval_h) * 365) if pct is not None else None
     return {
         "symbol": sym,
         "exchange_code": code,
         "exchange_name": _exchange_name(code),
-        "funding_rate_hourly": fr,
+        "funding_rate_pct": pct,
+        "funding_interval_hours": interval_h,
         "funding_apr_pct": apr_pct,
         "update_iso": _ts_to_iso(r.get("update")),
     }
@@ -203,7 +233,8 @@ async def predicted_funding(symbols: str | list[str]) -> list[dict]:
 async def funding_history(symbol: str, *, interval: str = "1hour",
                           hours: int = 24) -> list[dict]:
     """Historical funding for one full symbol. Returns chronological list of
-    {t, open, high, low, close} funding rate per bin."""
+    {t, open, high, low, close} funding rate per bin, in PERCENT per the
+    exchange's native funding interval (Coinalyze's raw unit)."""
     sym = (symbol or "").strip()
     if not sym:
         return []

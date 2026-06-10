@@ -107,7 +107,7 @@ def get_tool(name: str) -> ToolSpec | None:
 def _cap(rows: list | None, limit: int | None = None) -> list:
     """Truncate a list to `limit` (default MAX_ROWS) for prompt-size safety."""
     rows = rows or []
-    n = int(limit) if limit else MAX_ROWS
+    n = MAX_ROWS if limit is None else int(limit)
     n = max(1, min(n, MAX_ROWS))
     return rows[:n]
 
@@ -774,7 +774,7 @@ async def _t_cg_coin_markets(args: dict):
         "type": "object",
         "properties": {
             "coin_id":     {"type": "string",  "description": "CoinGecko id (e.g. 'bitcoin')"},
-            "days":        {"type": "integer", "default": 30, "description": "Lookback days (or pass 365/'max' for long history)"},
+            "days":        {"type": ["integer", "string"], "default": 30, "description": "Lookback days, max 365 on the keyless public tier ('max' for all-time needs a paid CoinGecko key)"},
             "vs_currency": {"type": "string",  "default": "usd"},
         },
         "required": ["coin_id"],
@@ -782,9 +782,14 @@ async def _t_cg_coin_markets(args: dict):
 )
 async def _t_cg_market_chart(args: dict):
     from tckr import coingecko as cg
+    days = args.get("days", 30)
+    if str(days).strip().lower() == "max":
+        days = "max"
+    else:
+        days = int(days)
     return await cg.market_chart(
         args["coin_id"],
-        days=int(args.get("days", 30)),
+        days=days,
         vs_currency=args.get("vs_currency", "usd"),
     )
 

@@ -317,8 +317,13 @@ def blurb(name: str) -> str:
 
 
 def _has(name: str) -> bool:
-    """Truthy check on a settings attribute (env var presence)."""
-    return bool(getattr(settings, name, "") or "")
+    """Truthy check on a settings attribute (env var presence).
+
+    Raises AttributeError on a name that isn't a real settings attribute —
+    a silent `getattr(..., "")` would make a typo'd `required_env` entry
+    report the module as permanently unconfigured with no diagnostic.
+    """
+    return bool(getattr(settings, name) or "")
 
 
 def configured(name: str) -> bool:

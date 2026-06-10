@@ -28,7 +28,7 @@ equity/ETF only) — a second reason to keep CBOE around as a complement.
 from __future__ import annotations
 
 import logging
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 from tckr import _http, settings
 from tckr.cache import TTLCache
@@ -67,6 +67,15 @@ def _i(v) -> int | None:
         return None
 
 
+def _us_market_date() -> date:
+    """Today in US/Eastern — mirrors `tckr.options._us_market_date`."""
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.now(ZoneInfo("America/New_York")).date()
+    except Exception:  # noqa: BLE001 — no tz database; EST approximation
+        return (datetime.now(UTC) - timedelta(hours=5)).date()
+
+
 def _dte(expiration: str | None) -> int | None:
     if not expiration:
         return None
@@ -74,7 +83,7 @@ def _dte(expiration: str | None) -> int | None:
         exp = date.fromisoformat(expiration)
     except ValueError:
         return None
-    return (exp - datetime.now(UTC).date()).days
+    return (exp - _us_market_date()).days
 
 
 def _path_symbol(underlying: str) -> str:

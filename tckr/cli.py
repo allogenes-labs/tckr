@@ -76,7 +76,7 @@ def _check_for_update() -> str | None:
     # Try the 24h disk cache first.
     try:
         if _UPDATE_CACHE_FILE.exists():
-            cached = json.loads(_UPDATE_CACHE_FILE.read_text())
+            cached = json.loads(_UPDATE_CACHE_FILE.read_text(encoding="utf-8"))
             ts = datetime.fromisoformat(cached.get("ts", ""))
             if datetime.now(UTC) - ts < _UPDATE_CACHE_TTL:
                 latest = cached.get("latest")
@@ -98,7 +98,7 @@ def _check_for_update() -> str | None:
         _UPDATE_CACHE_FILE.write_text(json.dumps({
             "ts": datetime.now(UTC).isoformat(),
             "latest": latest,
-        }))
+        }), encoding="utf-8")
     except OSError:
         pass  # cache write best-effort
 

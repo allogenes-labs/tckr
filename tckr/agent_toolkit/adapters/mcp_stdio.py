@@ -60,15 +60,19 @@ async def _serve() -> None:
 
     @server.call_tool()
     async def call_tool(name: str, arguments: dict | None) -> list[TextContent]:
+        # Failures are RAISED, not returned as text: the MCP SDK converts a
+        # raised exception into CallToolResult(isError=True), which is the
+        # protocol-level error signal clients (and their LLMs) rely on.
+        # Returning the message as TextContent would look like a success.
         spec = get_tool(name)
         if spec is None:
-            return [TextContent(type="text", text=f"unknown tool: {name}")]
+            raise ValueError(f"unknown tool: {name}")
         try:
             result = await spec.callable(arguments or {})
-            return [TextContent(type="text", text=json.dumps(result, default=str))]
-        except Exception as e:  # noqa: BLE001
+        except Exception:
             log.exception("tool %s failed", name)
-            return [TextContent(type="text", text=f"{name} failed: {type(e).__name__}: {e}")]
+            raise
+        return [TextContent(type="text", text=json.dumps(result, default=str))]
 
     init_options = server.create_initialization_options()
     async with stdio_server() as (read_stream, write_stream):

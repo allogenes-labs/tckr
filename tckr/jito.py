@@ -251,10 +251,12 @@ async def tx_jito_info(signature: str) -> dict | None:
     if not settings.HELIUS_API_KEY:
         log.warning("jito.tx_jito_info: HELIUS_API_KEY not set")
         return None
-    url = "https://api.helius.xyz/v0/transactions"
+    # Key goes in `params`, not the URL string, so it can't leak via
+    # exception objects' request.url or URL-logging proxies.
     body = await _http.post_json(
-        f"{url}/?api-key={settings.HELIUS_API_KEY}",
+        "https://api.helius.xyz/v0/transactions",
         {"transactions": [sig]},
+        params={"api-key": settings.HELIUS_API_KEY},
         label=f"helius parse_tx {sig[:10]}",
     )
     if not isinstance(body, list) or not body or not isinstance(body[0], dict):

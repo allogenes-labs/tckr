@@ -51,6 +51,12 @@ def _i(v) -> int | None:
         return None
 
 
+def _pct100(v) -> float | None:
+    """Fraction-of-1 → 0-100 percent."""
+    f = _f(v)
+    return f * 100.0 if f is not None else None
+
+
 def _ms_to_iso(ms) -> str | None:
     try:
         return datetime.fromtimestamp(int(ms) / 1000, tz=UTC).isoformat()
@@ -188,8 +194,9 @@ async def token_security(address: str) -> dict | None:
         "mintable": d.get("mintAuthority") not in (None, "", "null"),
         "freezeable": d.get("freezeAuthority") not in (None, "", "null"),
         "mutable_metadata": bool(d.get("mutableMetadata")),
-        "top10_holder_pct": _f(d.get("top10HolderPercent")),
-        "top10_user_pct": _f(d.get("top10UserPercent")),
+        # Birdeye reports these as fractions of 1; scale to 0-100 per `_pct`.
+        "top10_holder_pct": _pct100(d.get("top10HolderPercent")),
+        "top10_user_pct": _pct100(d.get("top10UserPercent")),
         "non_transferable": bool(d.get("nonTransferable")),
         "transfer_fee_enable": d.get("transferFeeEnable"),
         "is_true_token": bool(d.get("isTrueToken")) if "isTrueToken" in d else None,

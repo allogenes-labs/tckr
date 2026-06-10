@@ -141,10 +141,11 @@ async def get_json(url: str, *, params: dict | None = None,
     return await _request("GET", url, params=params, headers=headers, label=label)
 
 
-async def post_json(url: str, payload: Any, *, headers: dict | None = None,
-                    label: str = "") -> Any | None:
+async def post_json(url: str, payload: Any, *, params: dict | None = None,
+                    headers: dict | None = None, label: str = "") -> Any | None:
     """POST `payload` as JSON to `url`; return parsed JSON, or None on failure."""
-    return await _request("POST", url, json=payload, headers=headers, label=label)
+    return await _request("POST", url, json=payload, params=params,
+                          headers=headers, label=label)
 
 
 async def aclose() -> None:

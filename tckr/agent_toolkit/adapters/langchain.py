@@ -18,7 +18,7 @@ Use with any LangChain agent (LangGraph, AgentExecutor, etc.)::
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Union
 
 from tckr.agent_toolkit.core import TOOLS, ToolSpec, augment_description
 
@@ -33,7 +33,8 @@ def _json_schema_to_pydantic(name: str, schema: dict):
     adapters use, so the source of truth stays one place.
 
     Supports the subset of JSON Schema we actually use: object with `properties`
-    of {string, integer, number, boolean}, plus `required` and `default`.
+    of {string, integer, number, boolean, array}, type unions as lists
+    (e.g. ["integer", "string"]), plus `required` and `default`.
     """
     from pydantic import Field, create_model
 
@@ -43,11 +44,24 @@ def _json_schema_to_pydantic(name: str, schema: dict):
         "number":  float,
         "boolean": bool,
     }
+
+    def _py_type(prop: dict) -> Any:
+        t = prop.get("type")
+        if isinstance(t, list):
+            mapped = tuple(type_map.get(x) for x in t)
+            if mapped and all(mapped):
+                return Union[mapped]  # noqa: UP007 — built dynamically
+            return Any
+        if t == "array":
+            item_t = (prop.get("items") or {}).get("type")
+            return list[type_map.get(item_t, Any)]
+        return type_map.get(t, Any)
+
     properties = schema.get("properties", {})
     required = set(schema.get("required", []))
     fields: dict[str, Any] = {}
     for field_name, prop in properties.items():
-        py_type = type_map.get(prop.get("type"), Any)
+        py_type = _py_type(prop)
         description = prop.get("description", "")
         if field_name in required:
             fields[field_name] = (py_type, Field(..., description=description))
