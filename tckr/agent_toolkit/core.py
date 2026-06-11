@@ -274,6 +274,68 @@ async def _t_hl_candles(args: dict):
     return await hl.candles(args["symbol"], interval=interval, limit=limit)
 
 
+@register_tool(
+    "hl_spot",
+    "Hyperliquid SPOT snapshot for one symbol — the real spot price (not a perp "
+    "mark): {symbol, token_name, pair, px, prev_day_px, day_change_pct, "
+    "day_notional_volume_usd, basis_pct}. `basis_pct` is spot-vs-perp-mark "
+    "((spot/mark - 1) * 100; positive = spot above perp) when the symbol also "
+    "has a perp, else null. USE THIS before any basis/carry trade to confirm "
+    "the actual spot-vs-perp basis, and to price tokens with HL spot listings: "
+    "HYPE, PURR, and the Unit-bridged majors — pass canonical names (BTC, ETH, "
+    "SOL resolve via UBTC/UETH/USOL automatically). USDC-quoted pairs only.",
+    module="hyperliquid",
+    schema={
+        "type": "object",
+        "properties": {
+            "symbol": {"type": "string", "description": "Canonical base symbol, e.g. HYPE, PURR, BTC, ETH, SOL"},
+        },
+        "required": ["symbol"],
+    },
+)
+async def _t_hl_spot(args: dict) -> dict:
+    from tckr import hyperliquid as hl
+    return await hl.spot(args["symbol"])
+
+
+@register_tool(
+    "hl_spot_universe",
+    "All USDC-quoted Hyperliquid spot pairs ranked by 24h notional volume, "
+    "compact rows: {symbol, token_name, pair, px, day_change_pct, "
+    "day_notional_volume_usd}. Symbols are canonical (Unit-bridged "
+    "UBTC/UETH/USOL show as BTC/ETH/SOL). Use to DISCOVER which tokens have a "
+    "real HL spot market before reaching for hl_spot / planning spot-vs-perp "
+    "basis trades, instead of guessing symbol by symbol.",
+    module="hyperliquid",
+    schema={
+        "type": "object",
+        "properties": {
+            "limit": {"type": "integer", "description": "Rows to return (max 25). Default 25."},
+        },
+    },
+)
+async def _t_hl_spot_universe(args: dict) -> list:
+    from tckr import hyperliquid as hl
+    rows = await hl.spot_universe() or []
+    ranked = sorted(
+        (r for r in rows if isinstance(r, dict)),
+        key=lambda r: r.get("day_notional_volume_usd") or 0.0,
+        reverse=True,
+    )
+    compact = [
+        {
+            "symbol": r.get("symbol"),
+            "token_name": r.get("token_name"),
+            "pair": r.get("pair"),
+            "px": r.get("px"),
+            "day_change_pct": r.get("day_change_pct"),
+            "day_notional_volume_usd": r.get("day_notional_volume_usd"),
+        }
+        for r in ranked
+    ]
+    return _cap(compact, args.get("limit"))
+
+
 # ============================================================================
 # Unified cascade tools — best-effort price/history across providers
 # ============================================================================

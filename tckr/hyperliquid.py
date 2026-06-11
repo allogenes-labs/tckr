@@ -1,10 +1,14 @@
-"""Hyperliquid info API — perps marks, funding, open interest, order books, candles.
+"""Hyperliquid info API — perps marks, funding, OI, order books, candles, spot.
 
 Free, no API key. Single POST /info endpoint with a {"type": ...} payload.
 This module exposes the market-data subset (no user/account queries).
 
 Conventions:
 - Symbols are the perp "coin" names ("BTC", "ETH", "SOL", ...).
+- Spot pairs are named "@<index>" upstream (only PURR/USDC is human-readable);
+  `spot_universe` resolves them to base-token symbols and canonicalizes
+  Unit-bridged assets (UBTC/UETH/USOL/... → BTC/ETH/SOL/...) so spot prices
+  are addressable by the familiar symbol. Only USDC-quoted pairs are exposed.
 - Upstream numbers are strings; parsers cast to float.
 - Funding rate is per-hour (Hyperliquid charges hourly). `funding_apr_pct` is
   the linear-annualization convenience field.
@@ -143,6 +147,113 @@ async def perp(symbol: str) -> dict | None:
         if (p.get("symbol") or "").upper() == sym:
             return p
     return None
+
+
+# Unit-bridged spot assets (UBTC, UETH, USOL, UFART, ...) are wrapped
+# representations of the real coin; their token metadata carries a
+# fullName of the form "Unit <Asset>" ("Unit Bitcoin", "Unit Solana", ...).
+# We strip the U- prefix ONLY for tokens matching that metadata signature —
+# never blindly (a token literally named "USDC" or "UNIT" must pass through;
+# UNIT's fullName is "Unit" with no trailing space, so it does not match).
+_UNIT_FULLNAME_PREFIX = "Unit "
+
+
+def _canonical_spot_symbol(token: dict) -> str | None:
+    name = (token.get("name") or "").strip()
+    if not name:
+        return None
+    full = (token.get("fullName") or "").strip()
+    if full.startswith(_UNIT_FULLNAME_PREFIX) and name.startswith("U") and len(name) > 1:
+        return name[1:]
+    return name
+
+
+async def spot_universe() -> list[dict]:
+    """Snapshot of every USDC-quoted spot pair on Hyperliquid.
+
+    One row per pair: {symbol, token_name, pair, px, prev_day_px,
+    day_change_pct, day_notional_volume_usd, ts}. `symbol` is the canonical
+    base symbol (Unit-bridged UBTC/UETH/USOL appear as BTC/ETH/SOL);
+    `token_name` is the raw HL token name; `pair` is the raw universe name
+    ("@107", "PURR/USDC"). `px` is the mark price (mid as fallback — illiquid
+    pairs print midPx null upstream).
+    """
+    ck = ("spot_universe",)
+    cached = _cache.get(ck, settings.SPOT_TTL_S)
+    if cached is not None:
+        return cached
+    body = await _info({"type": "spotMetaAndAssetCtxs"})
+    if not isinstance(body, list) or len(body) != 2:
+        return []
+    meta, ctxs = body[0] or {}, body[1] or []
+    tokens_by_idx = {
+        t.get("index"): t for t in (meta.get("tokens") or []) if isinstance(t, dict)
+    }
+    # The ctx list can be longer than the universe list (it includes rows for
+    # pairs spotMeta hides); each ctx carries the pair name in `coin`, so join
+    # on that rather than trusting positional alignment.
+    ctx_by_coin = {c.get("coin"): c for c in ctxs if isinstance(c, dict)}
+    ts = _now_iso()
+    out: list[dict] = []
+    for u in meta.get("universe") or []:
+        if not isinstance(u, dict):
+            continue
+        pair_tokens = u.get("tokens") or []
+        if len(pair_tokens) != 2:
+            continue
+        base = tokens_by_idx.get(pair_tokens[0])
+        quote = tokens_by_idx.get(pair_tokens[1])
+        if not base or not quote or quote.get("name") != "USDC":
+            continue
+        ctx = ctx_by_coin.get(u.get("name")) or {}
+        mark = _f(ctx.get("markPx"))
+        px = mark if mark is not None else _f(ctx.get("midPx"))
+        prev_day = _f(ctx.get("prevDayPx"))
+        day_change_pct = None
+        if px is not None and prev_day not in (None, 0.0):
+            day_change_pct = (px / prev_day - 1.0) * 100.0
+        out.append({
+            "symbol": _canonical_spot_symbol(base),
+            "token_name": base.get("name"),
+            "pair": u.get("name"),
+            "px": px,
+            "prev_day_px": prev_day,
+            "day_change_pct": day_change_pct,
+            "day_notional_volume_usd": _f(ctx.get("dayNtlVlm")),
+            "ts": ts,
+        })
+    _cache.put(ck, out)
+    return out
+
+
+async def spot(symbol: str) -> dict | None:
+    """Single USDC-quoted spot snapshot by canonical symbol (raw token name
+    also accepted, so both `spot("BTC")` and `spot("UBTC")` resolve).
+
+    Adds `basis_pct` — spot px vs perp mark, (spot/mark - 1) * 100 — when a
+    perp exists for the canonical symbol; None otherwise. Positive basis means
+    spot trades above the perp. If several USDC pairs share a canonical base,
+    the highest-volume pair wins.
+    """
+    sym = (symbol or "").strip().upper()
+    if not sym:
+        return None
+    matches = [
+        r for r in await spot_universe()
+        if (r.get("symbol") or "").upper() == sym
+        or (r.get("token_name") or "").upper() == sym
+    ]
+    if not matches:
+        return None
+    row = dict(max(matches, key=lambda r: r.get("day_notional_volume_usd") or 0.0))
+    basis_pct = None
+    if row.get("px") is not None:
+        p = await perp(row["symbol"])
+        perp_mark = p.get("mark_px") if p else None
+        if perp_mark not in (None, 0.0):
+            basis_pct = (row["px"] / perp_mark - 1.0) * 100.0
+    row["basis_pct"] = basis_pct
+    return row
 
 
 async def all_mids() -> dict[str, float]:

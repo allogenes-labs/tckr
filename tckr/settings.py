@@ -54,6 +54,7 @@ def normalize_network(name: str) -> str:
 DEX_TTL_S       = _env_int("TCKR_DEX_TTL_S", 60)
 DEX_OHLCV_TTL_S = _env_int("TCKR_DEX_OHLCV_TTL_S", 300)
 PERPS_TTL_S     = _env_int("TCKR_PERPS_TTL_S", 30)
+SPOT_TTL_S      = _env_int("TCKR_SPOT_TTL_S", 30)
 TVL_TTL_S       = _env_int("TCKR_TVL_TTL_S", 600)
 ONCHAIN_TTL_S   = _env_int("TCKR_ONCHAIN_TTL_S", 120)
 # Token contract metadata is immutable — cache it for a day by default.
