@@ -234,6 +234,12 @@ async def spot(symbol: str) -> dict | None:
     perp exists for the canonical symbol; None otherwise. Positive basis means
     spot trades above the perp. If several USDC pairs share a canonical base,
     the highest-volume pair wins.
+
+    Adds `suspect_name_collision: True` when |basis_pct| > 20 — HL spot is
+    permissionless (HIP-1), so an unrelated token can squat a major's symbol
+    (e.g. a "WLD" spot pair trading 3.5× Worldcoin's perp mark). A real
+    spot/perp basis is bps, not tens of percent; treat flagged rows as a
+    different asset, not an arb.
     """
     sym = (symbol or "").strip().upper()
     if not sym:
@@ -253,6 +259,8 @@ async def spot(symbol: str) -> dict | None:
         if perp_mark not in (None, 0.0):
             basis_pct = (row["px"] / perp_mark - 1.0) * 100.0
     row["basis_pct"] = basis_pct
+    if basis_pct is not None and abs(basis_pct) > 20.0:
+        row["suspect_name_collision"] = True
     return row
 
 
