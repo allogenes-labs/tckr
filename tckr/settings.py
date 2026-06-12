@@ -150,6 +150,13 @@ POLYMARKET_TTL_S        = _env_int("TCKR_POLYMARKET_TTL_S", 30)
 # stable conditionId. Unset (default) keeps the alias map in-memory only.
 POLYMARKET_ALIASES_PATH = _env_str("TCKR_POLYMARKET_ALIASES_PATH", "")
 
+# ---------- Aliases ----------
+# Generic identifier equivalence classes (tckr.aliases). When set, alias
+# groups persist to this JSON file ({namespace: [[...], ...]}) so runtime
+# additions and manual edits survive restarts. Unset (default) keeps every
+# AliasMap in-memory only, matching POLYMARKET_ALIASES_PATH above.
+ALIASES_PATH = _env_str("TCKR_ALIASES_PATH", "")
+
 # ---------- Pyth (Hermes) ----------
 # Price moves are sub-second on-chain; cache very short for prices, much
 # longer for the catalog (rarely changes).

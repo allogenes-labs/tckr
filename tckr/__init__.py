@@ -43,6 +43,11 @@ Use the cascades when you want "best available" data without choosing a
 provider. They carry a `source` field on each result so the caller can tell
 which upstream answered.
 
+Identifier equivalence: `tckr.aliases` provides curated alias groups
+(`AliasMap` / `get_map`) for the recurring "one entity, several identifiers"
+problem — polymarket slug renames, HL spot symbol squatting, ticker vs
+coingecko id, dual-class equities. Opt-in persistence via TCKR_ALIASES_PATH.
+
 Every network call is async, cached (tckr.cache.TTLCache), and degrades
 gracefully — it returns None / [] rather than raising when an upstream fails.
 Modules that need an API key log a warning and return empty when the key is
