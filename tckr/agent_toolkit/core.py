@@ -112,6 +112,23 @@ def _cap(rows: list | None, limit: int | None = None) -> list:
     return rows[:n]
 
 
+def _sort_by(rows: list, field: str, desc: bool = True) -> list:
+    """Sort dict-rows by a numeric `field`. Rows whose value is missing/None
+    always sort last, regardless of direction, so an empty field never floats
+    to the top of a descending (or bottom of an ascending) screen."""
+    def _key(r):
+        v = r.get(field)
+        try:
+            num = float(v)
+            missing = False
+        except (TypeError, ValueError):
+            num, missing = 0.0, True
+        # Single ascending sort: missing rows last (1 > 0); negate the value
+        # for descending so the largest comes first without flipping the flag.
+        return (1 if missing else 0, -num if desc else num)
+    return sorted(rows, key=_key)
+
+
 # ============================================================================
 # Capabilities introspection tool — agents call this once to learn what's set up
 # ============================================================================
@@ -161,30 +178,54 @@ async def _t_hl_perp(args: dict) -> dict:
 
 @register_tool(
     "hl_universe",
-    "The full Hyperliquid perps universe (~230 symbols) ranked by 24h notional "
-    "volume, paged. Each row: symbol, mark_px, day_change_pct, funding_apr_pct, "
+    "The full Hyperliquid perps universe (~230 symbols), ranked and paged. Each "
+    "row: symbol, mark_px, day_change_pct, funding_apr_pct, "
     "funding_above_baseline_apr_pct, open_interest_usd, day_notional_volume_usd, "
-    "max_leverage. Use to SCAN for candidates — momentum (sort is by activity), "
-    "carry (extreme funding_above_baseline), or new listings — instead of "
-    "probing one symbol at a time with hl_perp. Page with `offset` (rows are "
-    "volume-ranked, so offset=25 starts at the 26th most active). Snapshot is "
-    "TTL-cached, so repeat/paged calls within a turn are free.",
+    "max_leverage. Use to SCAN for candidates instead of probing one symbol at a "
+    "time with hl_perp. `sort` re-ranks the whole universe: volume (default, "
+    "activity), oi (open interest), funding (raw funding APR), funding_excess "
+    "(funding_above_baseline_apr_pct — the real demand component, baseline "
+    "stripped out; see hl_perp), or change (24h %). `desc` (default true) is "
+    "highest-first; set desc=false to surface the bottom (e.g. sort=change "
+    "desc=false = biggest losers, sort=funding desc=false = shorts paying most). "
+    "Page with `offset` (offset=25 starts at the 26th row in the current "
+    "ranking). Snapshot is TTL-cached, so repeat/paged/re-sorted calls within a "
+    "turn are free.",
     module="hyperliquid",
     schema={
         "type": "object",
         "properties": {
             "limit": {"type": "integer", "description": "Rows to return (max 25). Default 25."},
-            "offset": {"type": "integer", "description": "Skip the first N volume-ranked rows. Default 0."},
+            "offset": {"type": "integer", "description": "Skip the first N ranked rows. Default 0."},
+            "sort": {
+                "type": "string",
+                "enum": ["volume", "oi", "funding", "funding_excess", "change"],
+                "description": "Ranking dimension. Default volume.",
+                "default": "volume",
+            },
+            "desc": {
+                "type": "boolean",
+                "description": "Highest-first when true (default); false sorts ascending.",
+                "default": True,
+            },
         },
     },
 )
 async def _t_hl_universe(args: dict) -> list:
     from tckr import hyperliquid as hl
+    _sort_fields = {
+        "volume": "day_notional_volume_usd",
+        "oi": "open_interest_usd",
+        "funding": "funding_apr_pct",
+        "funding_excess": "funding_above_baseline_apr_pct",
+        "change": "day_change_pct",
+    }
+    field = _sort_fields.get(args.get("sort") or "volume", "day_notional_volume_usd")
+    desc = args.get("desc", True)
     rows = await hl.perps_universe() or []
-    ranked = sorted(
-        (r for r in rows if isinstance(r, dict) and not r.get("is_delisted")),
-        key=lambda r: r.get("day_notional_volume_usd") or 0.0,
-        reverse=True,
+    ranked = _sort_by(
+        [r for r in rows if isinstance(r, dict) and not r.get("is_delisted")],
+        field, desc,
     )
     compact = [
         {
@@ -300,28 +341,44 @@ async def _t_hl_spot(args: dict) -> dict:
 
 @register_tool(
     "hl_spot_universe",
-    "All USDC-quoted Hyperliquid spot pairs ranked by 24h notional volume, "
-    "compact rows: {symbol, token_name, pair, px, day_change_pct, "
-    "day_notional_volume_usd}. Symbols are canonical (Unit-bridged "
-    "UBTC/UETH/USOL show as BTC/ETH/SOL). Use to DISCOVER which tokens have a "
-    "real HL spot market before reaching for hl_spot / planning spot-vs-perp "
-    "basis trades, instead of guessing symbol by symbol.",
+    "All USDC-quoted Hyperliquid spot pairs, ranked. Compact rows: {symbol, "
+    "token_name, pair, px, day_change_pct, day_notional_volume_usd}. Symbols are "
+    "canonical (Unit-bridged UBTC/UETH/USOL show as BTC/ETH/SOL). Use to DISCOVER "
+    "which tokens have a real HL spot market before reaching for hl_spot / "
+    "planning spot-vs-perp basis trades, instead of guessing symbol by symbol. "
+    "`sort` re-ranks: volume (default), change (24h %), or px (price). `desc` "
+    "(default true) is highest-first; desc=false ascending (e.g. sort=change "
+    "desc=false = biggest losers).",
     module="hyperliquid",
     schema={
         "type": "object",
         "properties": {
             "limit": {"type": "integer", "description": "Rows to return (max 25). Default 25."},
+            "sort": {
+                "type": "string",
+                "enum": ["volume", "change", "px"],
+                "description": "Ranking dimension. Default volume.",
+                "default": "volume",
+            },
+            "desc": {
+                "type": "boolean",
+                "description": "Highest-first when true (default); false sorts ascending.",
+                "default": True,
+            },
         },
     },
 )
 async def _t_hl_spot_universe(args: dict) -> list:
     from tckr import hyperliquid as hl
+    _sort_fields = {
+        "volume": "day_notional_volume_usd",
+        "change": "day_change_pct",
+        "px": "px",
+    }
+    field = _sort_fields.get(args.get("sort") or "volume", "day_notional_volume_usd")
+    desc = args.get("desc", True)
     rows = await hl.spot_universe() or []
-    ranked = sorted(
-        (r for r in rows if isinstance(r, dict)),
-        key=lambda r: r.get("day_notional_volume_usd") or 0.0,
-        reverse=True,
-    )
+    ranked = _sort_by([r for r in rows if isinstance(r, dict)], field, desc)
     compact = [
         {
             "symbol": r.get("symbol"),
@@ -749,6 +806,29 @@ async def _t_ds_latest_profiles(args: dict):
 async def _t_cz_funding_aggregate(args: dict):
     from tckr import coinalyze as cz
     return await cz.funding_aggregate(args["base"])
+
+
+@register_tool(
+    "cz_oi_aggregate",
+    "Cross-exchange OPEN INTEREST summary for one coin. Discovers every perp "
+    "market for the base across exchanges (Binance, Bybit, OKX, Hyperliquid, "
+    "...) and rolls up {per_exchange: [...], aggregate: {total_open_interest_usd, "
+    "n_exchanges, top_exchange_share_pct, ts}}. `top_exchange_share_pct` flags "
+    "venue concentration. Pair with cz_funding_aggregate to read where OI is "
+    "concentrated vs. where funding is extreme — OI piling onto one venue while "
+    "funding diverges marks a crowded, venue-specific position.",
+    module="coinalyze",
+    schema={
+        "type": "object",
+        "properties": {
+            "base": {"type": "string", "description": "Base coin symbol (e.g. BTC, ETH, SOL, HYPE)"},
+        },
+        "required": ["base"],
+    },
+)
+async def _t_cz_oi_aggregate(args: dict):
+    from tckr import coinalyze as cz
+    return await cz.open_interest_aggregate(args["base"])
 
 
 @register_tool(

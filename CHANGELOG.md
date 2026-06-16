@@ -6,6 +6,18 @@ All notable changes to `tckr` are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Added
+- **`cz_oi_aggregate` agent tool** — cross-exchange open-interest rollup for one
+  coin (the OI sibling of `cz_funding_aggregate`), wrapping the existing
+  `coinalyze.open_interest_aggregate`. Returns per-exchange OI plus
+  `{total_open_interest_usd, n_exchanges, top_exchange_share_pct}`.
+- **`hl_universe` / `hl_spot_universe`: `sort` + `desc` args.** The perps
+  universe can now be ranked by `volume` (default), `oi`, `funding`,
+  `funding_excess` (baseline-adjusted), or `change`; spot by `volume`, `change`,
+  or `px`. `desc=false` surfaces the bottom (e.g. biggest losers). Omitting
+  `sort` preserves the previous volume-ranked behavior. Turns the universe tools
+  into one-call screeners instead of volume-only listings.
+
 ## [0.3.3] — 2026-06-10
 
 Bug-fix release from a full-codebase audit. Several fixes change returned
