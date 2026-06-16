@@ -33,8 +33,8 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import Callable, Iterable
 
 from tckr import settings
 
