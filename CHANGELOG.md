@@ -6,7 +6,13 @@ All notable changes to `tckr` are documented here. Format roughly follows
 
 ## [Unreleased]
 
+## [0.3.4] — 2026-06-17
+
 ### Added
+- **`tckr.aliases`** — curated identifier equivalence classes for resolving the
+  same asset across venues/naming schemes.
+- **Hyperliquid spot market data** — `spot_universe()` / `spot()` plus `hl_spot`
+  agent tools, with suspected spot-name-collision flagging in `spot()`.
 - **`cz_oi_aggregate` agent tool** — cross-exchange open-interest rollup for one
   coin (the OI sibling of `cz_funding_aggregate`), wrapping the existing
   `coinalyze.open_interest_aggregate`. Returns per-exchange OI plus
