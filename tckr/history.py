@@ -26,6 +26,11 @@ Volume units are USD regardless of source: CoinGecko returns USD total_volumes
 directly; Hyperliquid base-asset volume is multiplied by the bar's close so
 the units line up. This means `volume_last`/`volume_avg_20d` are comparable
 across symbols even when the cascade picks different sources for each.
+
+For full daily OHLC (open/high/low, needed for range indicators like ATR) use
+`ohlc` / `ohlc_one` instead of `candles`. Those are Hyperliquid-only (HL returns
+true OHLC; CoinGecko `market_chart` is closes-only) so they cover the ~230 HL
+perps and leave the long tail to the closes-only `candles` cascade.
 """
 from __future__ import annotations
 
@@ -148,4 +153,64 @@ async def candles(symbols: list[str] | str, *, days: int = 30) -> dict[str, dict
 async def candles_one(symbol: str, *, days: int = 30) -> dict | None:
     """Single-symbol convenience over `candles([symbol])`."""
     d = await candles([symbol], days=days)
+    return d.get(symbol.strip().upper()) if symbol else None
+
+
+async def ohlc(symbols: list[str] | str, *, days: int = 30) -> dict[str, dict]:
+    """Daily **OHLC** bars for `symbols`, from sources that expose full candles.
+
+    Like `candles` but preserves open/high/low (not just closes) — needed for
+    range indicators such as ATR. Returns
+    `{symbol: {symbol, interval, candles: [{t, o, h, l, c, v}, ...], source}}`
+    (same shape as `hyperliquid.candles` / `geckoterminal.pool_ohlcv`).
+
+    Sourced from Hyperliquid, which returns true daily OHLC for its ~230-symbol
+    perp universe. Symbols HL doesn't cover are **absent** — CoinGecko's
+    `market_chart` (the `candles` fallback) is closes-only, so there is no clean
+    daily-OHLC fallback for the long tail; use `candles` when you only need
+    closes. Volume `v` is USD (HL base-asset volume * bar close), matching the
+    `candles` cascade's volume convention.
+    """
+    if isinstance(symbols, str):
+        symbols = [symbols]
+    syms = [s.strip().upper() for s in symbols if s and s.strip()]
+    syms = list(dict.fromkeys(syms))
+    if not syms:
+        return {}
+    days = max(1, int(days))
+
+    hl_syms = await _hl_universe_syms()
+    out: dict[str, dict] = {}
+
+    async def _one(sym: str) -> None:
+        if sym not in hl_syms:
+            return  # no full-OHLC source covers this symbol — caller uses `candles`
+        r = await hl.candles(sym, interval="1d", limit=days)
+        rows = (r or {}).get("candles") or []
+        bars: list[dict] = []
+        for c in rows:
+            close = c.get("c")
+            if close is None:
+                continue
+            base_vol = c.get("v") or 0.0
+            bars.append({
+                "t": c.get("t"),
+                "o": c.get("o"),
+                "h": c.get("h"),
+                "l": c.get("l"),
+                "c": float(close),
+                "v": float(base_vol) * float(close),  # USD, matches `candles`
+            })
+        if bars:
+            out[sym] = {"symbol": sym, "interval": "1d",
+                        "candles": bars[-days:], "source": "hyperliquid"}
+
+    await asyncio.gather(*(_one(s) for s in syms))
+    return out
+
+
+async def ohlc_one(symbol: str, *, days: int = 30) -> dict | None:
+    """Single-symbol convenience over `ohlc([symbol])`. None if no OHLC source
+    covers the symbol (fall back to `candles_one` for closes)."""
+    d = await ohlc([symbol], days=days)
     return d.get(symbol.strip().upper()) if symbol else None

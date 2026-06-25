@@ -38,10 +38,19 @@ Unified cascades (best-effort across providers):
 
     quotes          USD spot price cascade: CoinGecko → Hyperliquid
     history         daily candle cascade:   CoinGecko market_chart → HL candleSnapshot
+                    (`candles` = closes; `ohlc` = full OHLC bars, HL-only, for ATR etc.)
 
 Use the cascades when you want "best available" data without choosing a
 provider. They carry a `source` field on each result so the caller can tell
 which upstream answered.
+
+Local analytics: `tckr.analytics` is a stdlib-only (no numpy/pandas) library of
+deterministic financial primitives — returns, realized/annualized volatility,
+Sharpe/Sortino/Calmar, max drawdown, SMA/EMA/WMA, RSI, MACD, Bollinger, ATR,
+z-score, correlation/beta. Pure functions over the `list[float]` closes / OHLC
+bars the data modules already return, so an agent gets a provably-correct number
+instead of doing arithmetic in-context. Rates are fractions; daily series
+annualize on 365 (crypto trades 24/7).
 
 Identifier equivalence: `tckr.aliases` provides curated alias groups
 (`AliasMap` / `get_map`) for the recurring "one entity, several identifiers"

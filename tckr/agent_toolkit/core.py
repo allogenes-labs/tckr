@@ -1610,6 +1610,177 @@ async def _t_opt_expirations(args: dict):
 
 
 # ============================================================================
+# Local analytics — deterministic math over fetched candles. These tools do no
+# network of their own; they pull the daily-close cascade then call the
+# stdlib-only primitives in `tckr.analytics`. module="" → "meta" bucket (like
+# the other compute/cascade tools), no registry entry needed.
+# ============================================================================
+
+def _last(xs):
+    """Most-recent element of a list (the value an agent usually wants), or None."""
+    return xs[-1] if xs else None
+
+
+@register_tool(
+    "ta_risk",
+    "Risk & performance stats for one symbol over a daily-close window — computed "
+    "deterministically (not estimated) from the `candles` cascade (HL→CG). Returns "
+    "{symbol, source, n_bars, lookback_days, cumulative_return_pct, "
+    "annualized_volatility_pct, sharpe, sortino, calmar, max_drawdown_pct}. "
+    "Annualized on 365 (crypto trades 24/7). Prefer this over eyeballing candles "
+    "for vol / drawdown / risk-adjusted return.",
+    module="",  # local compute over fetched data
+    schema={
+        "type": "object",
+        "properties": {
+            "symbol": {"type": "string", "description": "Upper-case ticker, e.g. BTC, ETH, SOL"},
+            "days": {"type": "integer", "description": "Daily-close lookback (default 180, max 365)", "default": 180},
+        },
+        "required": ["symbol"],
+    },
+)
+async def _t_ta_risk(args: dict) -> dict:
+    from tckr import analytics as an, history
+    sym = (args.get("symbol") or "").strip().upper()
+    days = max(2, min(int(args.get("days", 180)), 365))
+    data = await history.candles_one(sym, days=days)
+    closes = (data or {}).get("closes") or []
+    if len(closes) < 2:
+        return {"symbol": sym, "n_bars": len(closes), "error": "insufficient candle history"}
+
+    def _pct(x):
+        return x * 100.0 if x is not None else None
+
+    mdd = an.max_drawdown(closes)
+    return {
+        "symbol": sym,
+        "source": (data or {}).get("source"),
+        "n_bars": len(closes),
+        "lookback_days": days,
+        "cumulative_return_pct": _pct(an.cumulative_return(closes)),
+        "annualized_volatility_pct": _pct(an.volatility(closes)),
+        "sharpe": an.sharpe(closes),
+        "sortino": an.sortino(closes),
+        "calmar": an.calmar(closes),
+        "max_drawdown_pct": _pct(mdd["max_drawdown"]) if mdd else None,
+    }
+
+
+@register_tool(
+    "ta_indicators",
+    "Latest technical-indicator values for one symbol — computed deterministically "
+    "from daily candles. `indicators` selects any of: sma (20), ema (20), rsi (14), "
+    "macd (12/26/9), bollinger (20,2), zscore, atr (14). Returns the most-recent "
+    "value of each requested indicator plus {symbol, source, n_bars, last_close}. "
+    "Pulls true OHLC from the `ohlc` cascade (Hyperliquid, ~230 symbols) so ATR "
+    "works; for symbols HL doesn't cover it falls back to the closes-only `candles` "
+    "cascade (CoinGecko) and ATR comes back null.",
+    module="",
+    schema={
+        "type": "object",
+        "properties": {
+            "symbol": {"type": "string", "description": "Upper-case ticker, e.g. BTC, ETH"},
+            "days": {"type": "integer", "description": "Daily lookback (default 120, max 365)", "default": 120},
+            "indicators": {
+                "type": "array",
+                "items": {"type": "string", "enum": ["sma", "ema", "rsi", "macd", "bollinger", "zscore", "atr"]},
+                "description": "Which indicators to compute. Default: all of them.",
+            },
+        },
+        "required": ["symbol"],
+    },
+)
+async def _t_ta_indicators(args: dict) -> dict:
+    from tckr import analytics as an, history
+    sym = (args.get("symbol") or "").strip().upper()
+    days = max(2, min(int(args.get("days", 120)), 365))
+    wanted = args.get("indicators") or ["sma", "ema", "rsi", "macd", "bollinger", "zscore", "atr"]
+    # Prefer full OHLC (enables ATR); fall back to the broader closes-only cascade.
+    bars_data = await history.ohlc_one(sym, days=days)
+    bars = (bars_data or {}).get("candles") or []
+    if bars:
+        closes = [b["c"] for b in bars]
+        source = bars_data.get("source")
+    else:
+        cl = await history.candles_one(sym, days=days)
+        closes = (cl or {}).get("closes") or []
+        source = (cl or {}).get("source")
+    out: dict = {
+        "symbol": sym,
+        "source": source,
+        "n_bars": len(closes),
+        "last_close": _last(closes),
+    }
+    if len(closes) < 2:
+        out["error"] = "insufficient candle history"
+        return out
+    if "sma" in wanted:
+        out["sma_20"] = _last(an.sma(closes, 20))
+    if "ema" in wanted:
+        out["ema_20"] = _last(an.ema(closes, 20))
+    if "rsi" in wanted:
+        out["rsi_14"] = _last(an.rsi(closes, 14))
+    if "macd" in wanted:
+        m = an.macd(closes)
+        out["macd"] = None if not m else {
+            "macd": _last(m["macd"]), "signal": _last(m["signal"]), "hist": _last(m["hist"]),
+        }
+    if "bollinger" in wanted:
+        b = an.bollinger(closes, 20, 2.0)
+        out["bollinger"] = None if not b else {
+            "mid": _last(b["mid"]), "upper": _last(b["upper"]), "lower": _last(b["lower"]),
+        }
+    if "zscore" in wanted:
+        out["zscore"] = an.zscore(closes)
+    if "atr" in wanted:
+        # ATR needs high/low — only when the OHLC cascade resolved the symbol.
+        out["atr_14"] = _last(an.atr(bars, 14)) if bars else None
+    return out
+
+
+@register_tool(
+    "ta_correlation",
+    "Return-based correlation and beta between two symbols over a daily-close "
+    "window (both via the `candles` cascade). Returns {symbol, benchmark, days, "
+    "n_returns, correlation, beta, sources}. correlation is Pearson on periodic "
+    "returns; beta = cov(symbol,benchmark)/var(benchmark). Use for pair / hedge "
+    "reads (e.g. how tightly an alt tracks BTC).",
+    module="",
+    schema={
+        "type": "object",
+        "properties": {
+            "symbol": {"type": "string", "description": "Asset ticker, e.g. SOL"},
+            "benchmark": {"type": "string", "description": "Benchmark ticker, e.g. BTC"},
+            "days": {"type": "integer", "description": "Daily-close lookback (default 180, max 365)", "default": 180},
+        },
+        "required": ["symbol", "benchmark"],
+    },
+)
+async def _t_ta_correlation(args: dict) -> dict:
+    from tckr import analytics as an, history
+    sym = (args.get("symbol") or "").strip().upper()
+    bench = (args.get("benchmark") or "").strip().upper()
+    days = max(2, min(int(args.get("days", 180)), 365))
+    data = await history.candles([sym, bench], days=days)
+    a = (data.get(sym) or {}).get("closes") or []
+    b = (data.get(bench) or {}).get("closes") or []
+    n = min(len(a), len(b))
+    if n < 3:
+        return {"symbol": sym, "benchmark": bench, "n_returns": max(0, n - 1),
+                "error": "insufficient overlapping candle history"}
+    return {
+        "symbol": sym,
+        "benchmark": bench,
+        "days": days,
+        "n_returns": n - 1,
+        "correlation": an.correlation(a, b),
+        "beta": an.beta(a, b),
+        "sources": {sym: (data.get(sym) or {}).get("source"),
+                    bench: (data.get(bench) or {}).get("source")},
+    }
+
+
+# ============================================================================
 # Prompt-injection helpers
 # ============================================================================
 

@@ -209,6 +209,30 @@ async def smoke_helius() -> None:
         print(f"  {s['block_ts']} {err:<4} slot={s['slot']} sig={s['signature'][:16]}…")
 
 
+async def smoke_analytics() -> None:
+    """Fetch-and-compute analytics tools end to end (keyless via HL cascade)."""
+    from tckr.agent_toolkit.core import get_tool
+
+    risk = await get_tool("ta_risk").callable({"symbol": "BTC", "days": 90})
+    print(f"\n[analytics] ta_risk BTC: n={risk.get('n_bars')} src={risk.get('source')} "
+          f"vol%={risk.get('annualized_volatility_pct')} sharpe={risk.get('sharpe')} "
+          f"maxDD%={risk.get('max_drawdown_pct')}")
+    assert risk.get("n_bars", 0) >= 2, "expected BTC daily candles for risk stats"
+
+    ind = await get_tool("ta_indicators").callable({"symbol": "BTC", "days": 60})
+    print(f"[analytics] ta_indicators BTC: last={ind.get('last_close')} "
+          f"rsi14={ind.get('rsi_14')} sma20={ind.get('sma_20')} "
+          f"atr14={ind.get('atr_14')} zscore={ind.get('zscore')}")
+    assert "rsi_14" in ind, "expected RSI in indicators output"
+    assert ind.get("atr_14") is not None, "BTC is HL-covered → ATR should populate from OHLC"
+
+    corr = await get_tool("ta_correlation").callable(
+        {"symbol": "ETH", "benchmark": "BTC", "days": 90})
+    print(f"[analytics] ta_correlation ETH/BTC: n={corr.get('n_returns')} "
+          f"corr={corr.get('correlation')} beta={corr.get('beta')}")
+    assert corr.get("n_returns", 0) >= 2, "expected overlapping ETH/BTC history"
+
+
 async def main() -> None:
     from tckr import _http
 
@@ -219,6 +243,7 @@ async def main() -> None:
         await smoke_defillama()
         await smoke_alchemy()
         await smoke_helius()
+        await smoke_analytics()
         print("\nSMOKE OK")
     finally:
         await _http.aclose()
