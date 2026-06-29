@@ -187,6 +187,14 @@ def _risk_summary(row: dict) -> dict:
     hard: list[str] = []
     soft: list[str] = []
 
+    # Safety-critical fields. If GoPlus returns a partial record that OMITS these
+    # (vs. returning them False), we cannot certify the token safe — a missing
+    # field must never silently read as "not risky".
+    raw = row.get("raw") or {}
+    _CRITICAL = ("is_honeypot", "cannot_sell_all", "hidden_owner",
+                 "can_take_back_ownership", "selfdestruct")
+    missing_critical = [c for c in _CRITICAL if c not in raw]
+
     if row.get("is_honeypot") is True:
         hard.append("HONEYPOT: contract blocks sells")
     if row.get("hidden_owner") is True:
@@ -247,6 +255,16 @@ def _risk_summary(row: dict) -> dict:
         level = "low"
     else:
         level = "unknown" if not row.get("is_open_source") else "low"
+
+    # A partial response that omits the hard-blocker fields can't be a clean bill
+    # of health — surface the gap and never let it settle at "low".
+    if missing_critical and not hard:
+        soft.append(
+            f"incomplete GoPlus data: missing {', '.join(missing_critical)} "
+            f"— cannot confirm safe"
+        )
+        if level == "low":
+            level = "unknown"
 
     return {"risk_level": level, "hard_blockers": hard, "soft_warnings": soft}
 

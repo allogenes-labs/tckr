@@ -71,6 +71,12 @@ async def is_honeypot(chain: str, address: str) -> dict | None:
         }
     `is_honeypot=True` is the hard signal — do not trade. `sell_tax > 0.10`
     is the soft signal — tradeable but the venue is extracting >10% on exit.
+
+    IMPORTANT: `is_honeypot` (and `can_buy`/`can_sell`) are `None` — **unknown** —
+    when honeypot.is returns no `honeypotResult` or the simulation didn't succeed
+    (unsupported token, failed sim, partial body). A `None` here means "could not
+    verify", NOT "safe": never treat unknown as tradeable. Only a definitive
+    verdict (`is_honeypot` is a real bool) is cached.
     """
     cid = _chain_id(chain)
     addr = (address or "").strip()
@@ -89,31 +95,52 @@ async def is_honeypot(chain: str, address: str) -> dict | None:
     if not isinstance(body, dict):
         return None
 
-    honey = body.get("honeypotResult") or {}
+    honey = body.get("honeypotResult")
     sim = body.get("simulationResult") or {}
-    sim_meta = body.get("simulationSuccess")
+    sim_ok = bool(body.get("simulationSuccess"))
     flags = body.get("flags") or []
     summary = body.get("summary") or {}
+
+    # The honeypot verdict is a hard bool only when honeypotResult is present;
+    # otherwise it's UNKNOWN (None), not False — a missing block must never read
+    # as "safe to trade".
+    if isinstance(honey, dict) and "isHoneypot" in honey:
+        is_hp = bool(honey["isHoneypot"])
+    else:
+        is_hp = None
+    honey = honey if isinstance(honey, dict) else {}
+
+    # can_buy/can_sell are knowable only when the simulation actually succeeded;
+    # a confirmed honeypot forces both False.
+    if is_hp is True:
+        can_buy = can_sell = False
+    elif sim_ok:
+        can_buy = bool(sim.get("buyGas"))
+        can_sell = bool(sim.get("sellGas"))
+    else:
+        can_buy = can_sell = None
 
     out = {
         "chain": chain,
         "address": addr,
-        "is_honeypot": bool(honey.get("isHoneypot")),
+        "is_honeypot": is_hp,
         "honeypot_reason": honey.get("honeypotReason"),
         "buy_tax": _f(sim.get("buyTax")),
         "sell_tax": _f(sim.get("sellTax")),
         "transfer_tax": _f(sim.get("transferTax")),
-        "can_buy": bool(sim.get("buyGas")) and not honey.get("isHoneypot"),
-        "can_sell": bool(sim.get("sellGas")) and not honey.get("isHoneypot"),
+        "can_buy": can_buy,
+        "can_sell": can_sell,
         "buy_gas": sim.get("buyGas"),
         "sell_gas": sim.get("sellGas"),
         "max_buy_usd": _f((summary.get("maxBuy") or {}).get("withTokenUsd")),
         "max_sell_usd": _f((summary.get("maxSell") or {}).get("withTokenUsd")),
-        "simulation_success": bool(sim_meta),
+        "simulation_success": sim_ok,
         "simulation_error": body.get("simulationError"),
         "flags": flags,
         "risk_label": (summary.get("risk") or "").lower() or None,  # "low"/"medium"/"high"/"honeypot"
         "ts": _now_iso(),
     }
-    _cache.put(ck, out)
+    # Only cache a definitive honeypot verdict; never pin an "unknown" for the TTL.
+    if is_hp is not None:
+        _cache.put(ck, out)
     return out

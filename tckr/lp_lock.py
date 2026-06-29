@@ -333,12 +333,18 @@ async def _v3_pool_params(pool_address: str, network: str) -> tuple[str, str, in
 
 
 async def _get_locker_nft_ids(locker_address: str, nfpm_address: str,
-                               network: str) -> list[int]:
+                               network: str) -> list[int] | None:
     """List all NFT tokenIds (from the V3 NFPM contract) owned by `locker_address`.
 
     Uses Alchemy's NFT API (`getNFTsForOwner`) — one paginated call, much
     faster than ERC-721 Enumerable iteration. Caches the list aggressively
     (lockers acquire NFTs at the rate of new lock events — minutes timescale).
+
+    Returns `None` — **unknown** — when the fetch can't be performed (no Alchemy
+    key / unsupported network) or fails before any page is read. A successful
+    fetch returns the (possibly empty) list. The distinction matters: callers
+    must NOT treat an unknown as "locker holds nothing" (which would render a
+    locked pool as unlocked). Only a genuine fetch is cached.
     """
     ck = ("locker_nfts", network, locker_address.lower(), nfpm_address.lower())
     cached = _cache.get(ck, settings.TOKEN_METADATA_TTL_S)
@@ -348,11 +354,12 @@ async def _get_locker_nft_ids(locker_address: str, nfpm_address: str,
     canon = settings.normalize_network(network)
     slug = alchemy._ALCHEMY_NETWORKS.get(canon)
     if not slug or not settings.ALCHEMY_API_KEY:
-        return []
+        return None  # can't fetch — unknown, NOT "no NFTs"
     base_url = f"https://{slug}.g.alchemy.com/nft/v3/{settings.ALCHEMY_API_KEY}/getNFTsForOwner"
 
     out: list[int] = []
     page_key: str | None = None
+    fetched_any = False
     # Cap pages at 10 (each is up to 100 NFTs = 1000 total). Lockers may hold
     # more but this keeps the call bounded; the warning surfaces if hit.
     for _page in range(10):
@@ -367,7 +374,14 @@ async def _get_locker_nft_ids(locker_address: str, nfpm_address: str,
         body = await _http.get_json(base_url, params=params,
                                      label=f"alchemy NFTs {locker_address[:8]}")
         if not isinstance(body, dict):
+            # Transient failure: if we already read some pages, return the
+            # partial list (same contract as the 10-page cap below); if nothing
+            # was fetched at all, signal unknown so the empty list isn't cached
+            # or read as "no locks".
+            if not fetched_any:
+                return None
             break
+        fetched_any = True
         for nft in body.get("ownedNfts") or []:
             tid_str = (nft.get("tokenId") or "")
             try:
@@ -381,7 +395,7 @@ async def _get_locker_nft_ids(locker_address: str, nfpm_address: str,
     else:
         log.warning("lp_lock: hit 10-page cap on %s; may have missed NFTs", locker_address[:8])
 
-    _cache.put(ck, out)
+    _cache.put(ck, out)  # only reached on a genuine fetch
     return out
 
 
@@ -445,13 +459,20 @@ async def _v3_lock_report(pool_address: str, *, network: str) -> dict | None:
 
     lockers_meta = _KNOWN_V3_LOCKERS.get(network) or []
     if not lockers_meta:
+        # No lockers known for this network → we can't assess lock status.
+        # Return None (unknown), never a definitive is_locked=False (matches V2).
         log.warning("lp_lock: no V3 lockers configured for %r", network)
+        return None
 
     locker_rows: list[dict] = []
     total_locked_liq = 0
     total_locked_positions = 0
+    had_fetch_error = False
     for L in lockers_meta:
         nft_ids = await _get_locker_nft_ids(L["address"], nfpm, network)
+        if nft_ids is None:
+            had_fetch_error = True  # couldn't read this locker — don't conclude "unlocked"
+            continue
         if not nft_ids:
             continue
         matching_positions: list[dict] = []
@@ -480,6 +501,10 @@ async def _v3_lock_report(pool_address: str, *, network: str) -> dict | None:
         })
         total_locked_liq += loc_total
         total_locked_positions += len(matching_positions)
+
+    # Found nothing AND a locker fetch failed → can't certify "not locked".
+    if total_locked_positions == 0 and had_fetch_error:
+        return None
 
     locker_rows.sort(key=lambda r: r["total_liquidity_raw"], reverse=True)
     return {
@@ -580,13 +605,20 @@ async def _v4_lock_report(pool_id: str, *, network: str) -> dict | None:
 
     lockers_meta = _KNOWN_V4_LOCKERS.get(network) or []
     if not lockers_meta:
+        # No lockers known for this network → unknown, never a definitive
+        # is_locked=False (matches V2/V3).
         log.warning("lp_lock: no V4 lockers configured for %r", network)
+        return None
 
     locker_rows: list[dict] = []
     total_positions = 0
+    had_fetch_error = False
     matched_pool_key: tuple | None = None
     for L in lockers_meta:
         nft_ids = await _get_locker_nft_ids(L["address"], posm, network)
+        if nft_ids is None:
+            had_fetch_error = True  # couldn't read this locker — don't conclude "unlocked"
+            continue
         if not nft_ids:
             continue
         matched_positions: list[dict] = []
@@ -614,6 +646,10 @@ async def _v4_lock_report(pool_id: str, *, network: str) -> dict | None:
             "positions": matched_positions,
         })
         total_positions += len(matched_positions)
+
+    # Found nothing AND a locker fetch failed → can't certify "not locked".
+    if total_positions == 0 and had_fetch_error:
+        return None
 
     locker_rows.sort(key=lambda r: r["n_positions"], reverse=True)
     out = {
