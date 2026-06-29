@@ -148,12 +148,14 @@ REGISTRY: dict[str, ModuleSpec] = {
               "Filters wSOL/WETH/stables as counter assets by default.",
     ),
     "jito": ModuleSpec(
-        "jito", Tier.KEYED_FREE,
-        # Tip-floor and bundle status are keyless; snipe_score / tx_jito_info
-        # need Helius. Listed as required because the headline functions need it.
-        required_env=("HELIUS_API_KEY",),
+        "jito", Tier.KEYLESS_FREE,
+        # tip_floor() and bundle_status() work with no key, so the module is
+        # keyless-base; HELIUS_API_KEY is an expansion that unlocks tx parsing
+        # (tx_jito_info / snipe_score), not a hard requirement.
+        optional_env=("HELIUS_API_KEY",),
         notes="Solana MEV intel. tip_floor() and bundle_status() are keyless; "
-              "tx_jito_info / snipe_score need HELIUS_API_KEY for tx parsing.",
+              "tx_jito_info / snipe_score need HELIUS_API_KEY for tx parsing "
+              "(set it to expand coverage).",
     ),
 
     # ---------- Keyed-paid ----------
@@ -194,12 +196,13 @@ REGISTRY: dict[str, ModuleSpec] = {
               "(ETH=1, Base=8453, Arb=42161, Op=10, Polygon=137, BNB=56, ...).",
     ),
     "solscan": ModuleSpec(
-        "solscan", Tier.KEYLESS_FREE,
-        # Public endpoints work no-key; SOLSCAN_API_KEY unlocks Pro endpoints
-        # with richer payloads.
-        optional_env=("SOLSCAN_API_KEY",),
-        notes="Solana block explorer. Public endpoints work keyless; "
-              "SOLSCAN_API_KEY unlocks Pro (richer parsing, higher RL).",
+        "solscan", Tier.KEYED_FREE,
+        # The public no-key API (public-api.solscan.io) was retired — it returns
+        # 404 as of 2026-06 — so a Pro key is now required for live data.
+        required_env=("SOLSCAN_API_KEY",),
+        notes="Solana block explorer (Pro API). The public no-key API was "
+              "retired (404 as of 2026-06); SOLSCAN_API_KEY is now required for "
+              "live data — keyless calls degrade to None.",
     ),
     "lunarcrush": ModuleSpec(
         "lunarcrush", Tier.KEYED_FREE,
@@ -447,10 +450,10 @@ def capabilities() -> dict:
           ...
         },
         "summary": {
-          "total": 17,
-          "configured": 9,
-          "expandable": 4,
-          "by_tier": {"keyless-free": 8, "keyed-free": 8, "keyed-paid": 1},
+          "total": 32,                 # illustrative — reflects live REGISTRY
+          "configured": 17,
+          "expandable": 6,
+          "by_tier": {"keyless-free": 17, "keyed-free": 12, "keyed-paid": 3},
         }
       }
     """

@@ -10,7 +10,7 @@ gives ~100 req/day on `/public/*` endpoints; paid tiers unlock higher
 quotas and the `/v4/*` endpoints.
 
 Endpoints wrapped:
-- `coins_list_v1()` — all tracked coins with Galaxy Score, AltRank, price,
+- `coins_list()` — all tracked coins with Galaxy Score, AltRank, price,
   social volume + sentiment.
 - `coin(coin_id_or_symbol)` — single-coin detail
 - `coin_time_series(coin, bucket, interval)` — historical Galaxy/AltRank/etc.

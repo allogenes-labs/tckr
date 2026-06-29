@@ -6,6 +6,36 @@ All notable changes to `tckr` are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Fixed (codebase audit)
+- **Token-safety verdicts never read "safe" on missing/partial data (P0).**
+  `honeypot.is_honeypot`/`can_buy`/`can_sell` are now `None` (unknown) when the
+  simulation didn't succeed or the result is absent; `goplus` downgrades to
+  `unknown` when hard-blocker fields are missing; `lp_lock` returns `None` (not
+  `is_locked: False`) when no lockers are configured for the network or a locker
+  lookup is unavailable, and no longer caches such failures.
+- **Cache correctness.** Fixed never-hitting cache keys in `hyperliquid.candles`
+  and `coinalyze.funding_history`/`liquidations` (they embedded `now`); stopped
+  caching transient failures in `alchemy.transfers`, `helius.token_holdings`,
+  `neynar`, `pumpfun`; added the double-checked lock to `coinalyze`/`cboe`; the
+  `TTLCache` now uses a monotonic clock and is bounded (memory-leak guard).
+- **Data correctness.** `coinalyze` cross-exchange aggregates group by exchange
+  (no more counting a venue's multiple quote perps as separate exchanges);
+  `polymarket` maps YES/NO by outcome label, not index; `coingecko`
+  `coin_id_from_symbol` no longer resolves an unknown ticker to an unrelated
+  coin; `analytics.correlation`/`beta` index-align their return series;
+  `etherscan` degrades gracefully on an unknown chain; `lunarcrush` `coin()`/
+  `topic()` return `None` on a rate-limit envelope; `virtuals` filters
+  graduated/genesis client-side; `wallet_pnl` isolates per-address failures;
+  `birdeye` auto-detects seconds-vs-ms timestamps.
+- **Security/infra.** `_http` parses before recording success (accurate health
+  stats), records retried 429s, and never logs a URL-embedded key; `cryptonews`
+  guards against XML entity-expansion (size cap + DTD rejection); negative
+  `TCKR_*` env values fall back to defaults.
+- **Accuracy.** `solscan` public no-key API retired → now keyed-free; The Graph
+  hosted service (`query_subgraph_name`) sunset → use `query_subgraph(id, …)`
+  (keyless gateway-by-id still works); `jito` reclassified keyless (tip floor /
+  bundle status need no key); assorted docstring/registry corrections.
+
 ### Added
 - **News & events — three new data sources + a unified cascade.** A new
   "News & events" category covering crypto-native and market-moving tradfi news:

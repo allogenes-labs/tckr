@@ -57,9 +57,20 @@ def _pct100(v) -> float | None:
     return f * 100.0 if f is not None else None
 
 
-def _ms_to_iso(ms) -> str | None:
+def _ms_to_iso(ts) -> str | None:
+    """Epoch → ISO. Birdeye is inconsistent — some time fields are in seconds,
+    others in milliseconds — so detect by magnitude rather than assuming ms:
+    a value >= 1e11 can only be milliseconds (1e11 s ≈ year 5138), anything
+    smaller is seconds. Prevents ~1970 dates from dividing seconds by 1000."""
     try:
-        return datetime.fromtimestamp(int(ms) / 1000, tz=UTC).isoformat()
+        v = int(ts)
+    except (TypeError, ValueError):
+        return None
+    if v <= 0:
+        return None
+    secs = v / 1000 if v >= 1e11 else v
+    try:
+        return datetime.fromtimestamp(secs, tz=UTC).isoformat()
     except (TypeError, ValueError, OSError):
         return None
 

@@ -1,11 +1,15 @@
 """Solscan — Solana block-explorer convenience.
 
-Solscan exposes a public no-key API for basic lookups and a paid Pro API for
-richer endpoints. Functions try the public path first; if SOLSCAN_API_KEY is
-set, they upgrade to the Pro endpoints which return more fields and have
-higher rate limits.
+NOTE (2026-06): Solscan **retired the public no-key API** — `public-api.solscan.io`
+now returns 404. The public (`pro=False`) code path is kept for backward-compat
+but degrades to None; a Pro key (`SOLSCAN_API_KEY`) is now required for live
+data. Set the key and pass `pro=True` (or rely on functions that auto-upgrade).
 
-Public endpoints (`https://public-api.solscan.io`) cover:
+Solscan's Pro API returns richer endpoints with higher rate limits. Functions
+try the public path first; if SOLSCAN_API_KEY is set, they upgrade to the Pro
+endpoints.
+
+Public endpoints (`https://public-api.solscan.io`, RETIRED — see note) covered:
 - token metadata
 - account info / token balances
 - simple tx lookups

@@ -116,8 +116,9 @@ async def feed_id_for_symbol(symbol: str) -> str | None:
 async def latest_price(feed_ids: Iterable[str] | str) -> list[dict] | None:
     """Latest parsed prices for one or more feed ids.
 
-    Returns a list of {id, symbol_metadata, price_usd_approx, raw_price,
-    confidence, expo, publish_time}.
+    Returns a list of {id, price, confidence, expo, publish_time, raw} where
+    `price`/`confidence` are scaled to human units, `expo` is the price exponent,
+    and `raw` is the unscaled Pyth price object.
     """
     if isinstance(feed_ids, str):
         feed_ids = [feed_ids]

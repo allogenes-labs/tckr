@@ -129,7 +129,7 @@ These actually buy you something beyond rate-limit bumps:
 | `COINGECKO_API_KEY` (Pro) | 500+ req/min plus Pro-only endpoints (top movers, NFT, full historical OHLC) |
 | `MESSARI_API_KEY` | Research-grade asset profiles + deep metrics — most useful endpoints moved paid in 2024 |
 | `TOKENTERMINAL_API_KEY` | Protocol fundamentals: revenue, fees, P/E, treasury, full historical series |
-| `SOLSCAN_API_KEY` (Pro) | Richer Solana transaction parsing, higher rate limit |
+| `SOLSCAN_API_KEY` (Pro) | Solana explorer data — the public no-key API was retired (2026-06), so a key is now required (free Pro tier available); unlocks richer parsing + higher limits |
 
 All keys are optional. Modules without their key gracefully no-op (return `None` / `[]`); `tckr status` shows what's configured right now.
 
@@ -151,7 +151,7 @@ All keys are optional. Modules without their key gracefully no-op (return `None`
 | `pyth` | keyless | — | On-chain oracle prices: ~400 feeds (crypto, equities, FX, metals) |
 | `cryptonews` | keyless | — | Crypto outlet headlines aggregated from RSS (Cointelegraph, Decrypt, The Block, CoinDesk) |
 | `gdelt` | keyless | — | Global news/event firehose (~65 languages); macro/tradfi market-movers by keyword + tone timelines |
-| `solscan` | keyless / keyed | `SOLSCAN_API_KEY` (Pro) | Solana block explorer |
+| `solscan` | keyed-free | `SOLSCAN_API_KEY` | Solana block explorer (Pro API; the public no-key API was retired 2026-06, key now required) |
 | `thegraph` | keyless / keyed | `THEGRAPH_API_KEY` | Generic GraphQL access to indexed subgraphs |
 | `alchemy` | keyed-free | `ALCHEMY_API_KEY` | EVM (Base, ETH) wallet balances + transfers |
 | `helius` | keyed-free | `HELIUS_API_KEY` | Solana RPC convenience layer |
@@ -162,7 +162,7 @@ All keys are optional. Modules without their key gracefully no-op (return `None`
 | `lunarcrush` | keyed-free | `LUNARCRUSH_API_KEY` | Social sentiment: Galaxy Score, AltRank, topic feeds |
 | `finnhub` | keyed-free | `FINNHUB_API_KEY` | Tradfi + crypto market news + per-ticker company news (~60 req/min) |
 | `lp_lock` | keyed-free | `ALCHEMY_API_KEY` | LP-lock detection: Uniswap V2 / V3 / V4 on Base / ETH |
-| `jito` | keyed-free | `HELIUS_API_KEY` | Solana MEV: tip floor, bundle status, snipe-score |
+| `jito` | keyless | `HELIUS_API_KEY` (optional) | Solana MEV: tip floor + bundle status keyless; HELIUS unlocks snipe-score / tx parsing |
 | `pumpfun` | keyed-free | `MORALIS_API_KEY` *or* `BITQUERY_API_KEY` (+ `HELIUS_API_KEY` for state) | Pump.fun launchpad: discovery + bonding curve + analytics |
 | `wallet_pnl` | keyed-free | composite (Helius / Alchemy / Moralis / Birdeye) | FIFO PnL across Solana + Base wallets |
 | `neynar` | keyed-paid | `NEYNAR_API_KEY` | Farcaster cast search, channel feeds, trending |

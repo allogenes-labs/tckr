@@ -2,17 +2,23 @@
 
 Two access modes:
 
-1. **Hosted / public** — gateway URL with a free anonymous quota. Useful for
-   ad-hoc queries; rate-limited.
+1. **Keyless decentralized gateway** — query a subgraph by **id** with no key
+   via `gateway-arbitrum.network.thegraph.com/api/subgraphs/id/<id>` (verified
+   working 2026-06; rate-limited).
 2. **Authenticated decentralized network** — `https://gateway.thegraph.com/api/{key}/...`
    when `THEGRAPH_API_KEY` is set. Higher quota, signed.
+
+NOTE (2026-06): The Graph's **hosted service was sunset** —
+`api.thegraph.com/subgraphs/name/<owner>/<name>` now redirects/301s, so
+`query_subgraph_name` is effectively dead. Use `query_subgraph(subgraph_id, …)`
+with a subgraph **id** instead (works keyless on the decentralized gateway).
 
 We expose:
 
 - `query_subgraph(subgraph_id, query, variables=None)` — generic POST. Returns
-  the parsed `data` field (or None on error).
-- `query_subgraph_name(owner, name, query, variables=None)` — legacy hosted
-  service shape (`/subgraphs/name/<owner>/<name>`). Still works for many.
+  the parsed `data` field (or None on error). Preferred entry point.
+- `query_subgraph_name(owner, name, query, variables=None)` — DEPRECATED: the
+  hosted service it targets was sunset; kept for backward-compat but expect None.
 - A handful of named convenience queries for common subgraphs (Uniswap V3,
   Aave V3) so callers don't have to hand-write GraphQL for the popular cases.
 """

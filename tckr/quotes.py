@@ -26,7 +26,7 @@ Returned shape per resolved symbol:
     {
       "symbol":  "NEAR",
       "price":   2.7421,
-      "source":  "coingecko" | "hyperliquid" | "geckoterminal",
+      "source":  "coingecko" | "hyperliquid",
       "ts":      "2026-05-26T04:55:33+00:00",
     }
 
