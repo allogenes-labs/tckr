@@ -37,6 +37,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+from datetime import UTC
 from email.utils import parsedate_to_datetime
 from xml.etree import ElementTree as ET
 
@@ -65,6 +66,13 @@ _NS = {
 _TAG_RE = re.compile(r"<[^>]+>")
 _WS_RE = re.compile(r"\s+")
 
+# XML-DoS guards for untrusted feed bodies. stdlib xml.etree is vulnerable to
+# entity-expansion (billion-laughs); legitimate RSS never declares an internal
+# DTD, so we cap the body size and refuse any feed carrying a DOCTYPE/ENTITY —
+# a dependency-free alternative to defusedxml.
+_MAX_FEED_BYTES = 5_000_000
+_DTD_SCAN = 8192
+
 
 def _strip_html(text: str | None, *, limit: int = 400) -> str:
     """Collapse an HTML description blob to a plain-text lede."""
@@ -84,6 +92,10 @@ def _parse_date(raw: str | None) -> tuple[str | None, int | None]:
         return None, None
     if dt is None:
         return None, None
+    # A pubDate without a timezone parses naive; treat it as UTC so timestamp()
+    # doesn't silently reinterpret it in the host's local zone.
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
     return dt.isoformat(), int(dt.timestamp())
 
 
@@ -154,6 +166,15 @@ async def feed(source: str) -> list[dict] | None:
             return cached
         xml = await _http.get_text(url, label=f"cryptonews {source}")
         if not xml:
+            return None
+        if len(xml) > _MAX_FEED_BYTES:
+            log.warning("cryptonews %s: feed too large (%d bytes) — skipped",
+                        source, len(xml))
+            return None
+        head = xml[:_DTD_SCAN].lower()
+        if "<!doctype" in head or "<!entity" in head:
+            log.warning("cryptonews %s: feed declares a DTD/entity — refusing to "
+                        "parse (XML-expansion guard)", source)
             return None
         items = _parse_feed(xml, source)
         _cache.put(key, items)

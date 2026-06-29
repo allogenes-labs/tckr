@@ -11,19 +11,24 @@ import os
 
 
 def _env_int(name: str, default: int) -> int:
+    # TTLs/timeouts/retries are all non-negative; a negative value is a config
+    # typo (e.g. a negative TTL would make every cache.get a miss and hammer the
+    # upstream), so fall back to the default rather than honoring it.
     raw = os.environ.get(name, "").strip()
     try:
-        return int(raw) if raw else default
+        val = int(raw) if raw else default
     except ValueError:
         return default
+    return val if val >= 0 else default
 
 
 def _env_float(name: str, default: float) -> float:
     raw = os.environ.get(name, "").strip()
     try:
-        return float(raw) if raw else default
+        val = float(raw) if raw else default
     except ValueError:
         return default
+    return val if val >= 0 else default
 
 
 def _env_str(name: str, default: str = "") -> str:

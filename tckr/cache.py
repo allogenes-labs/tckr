@@ -11,6 +11,12 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+# Hard cap on distinct cache keys per TTLCache instance. Modules keyed per
+# wallet / token / contract would otherwise accumulate an entry (and a lock)
+# per distinct key for the life of a long-running host process. Override per
+# instance via TTLCache(max_entries=...).
+_DEFAULT_MAX_ENTRIES = 4096
+
 
 @dataclass
 class CacheEntry:
@@ -18,16 +24,19 @@ class CacheEntry:
     fetched_at: float
 
     def age(self) -> float:
-        return time.time() - self.fetched_at
+        # Monotonic clock: immune to wall-clock steps (NTP, VM resume) that would
+        # otherwise make entries look permanently fresh or expire them early.
+        return time.monotonic() - self.fetched_at
 
     def fresh(self, ttl_s: float) -> bool:
         return self.age() < ttl_s
 
 
 class TTLCache:
-    def __init__(self) -> None:
+    def __init__(self, max_entries: int = _DEFAULT_MAX_ENTRIES) -> None:
         self._d: dict[tuple, CacheEntry] = {}
         self._locks: dict[tuple, asyncio.Lock] = {}
+        self._max = max(1, int(max_entries))
 
     def lock(self, key: tuple) -> asyncio.Lock:
         # Lazy lock to avoid event-loop-bound init issues.
@@ -46,4 +55,12 @@ class TTLCache:
         return (e.value, e.age()) if e is not None else None
 
     def put(self, key: tuple, value: Any) -> None:
-        self._d[key] = CacheEntry(value=value, fetched_at=time.time())
+        # Re-insert at the end so writes refresh recency (dicts are insertion
+        # ordered); evict oldest-written keys once over the cap.
+        if key in self._d:
+            del self._d[key]
+        self._d[key] = CacheEntry(value=value, fetched_at=time.monotonic())
+        while len(self._d) > self._max:
+            oldest = next(iter(self._d))
+            self._d.pop(oldest, None)
+            self._locks.pop(oldest, None)

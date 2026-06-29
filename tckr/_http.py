@@ -65,6 +65,15 @@ def _provider_of(label: str) -> str:
     return first
 
 
+def _safe_tag(url: str) -> str:
+    """Hostname-only tag for a label-less call — strips the path/query where API
+    keys are sometimes embedded, so they never reach logs or the health table."""
+    try:
+        return url.split("://", 1)[1].split("/", 1)[0] or "request"
+    except (IndexError, AttributeError):
+        return "request"
+
+
 def _record(label: str, *, status: int | None = None,
             ok: bool = False, error: str | None = None) -> None:
     p = _provider_of(label)
@@ -102,7 +111,12 @@ async def _request(
     label: str = "",
     as_text: bool = False,
 ) -> Any | None:
-    tag = label or url
+    # Never let the raw URL become the log/health tag: several providers embed
+    # the API key in the URL path/query (Alchemy /v2/<KEY>, Helius ?api-key=,
+    # Etherscan ?apikey=), so a label-less call would leak it into logs and the
+    # health table. Fall back to the bare hostname, which is also what
+    # `_provider_of` buckets on.
+    tag = label or _safe_tag(url)
     last_exc: Exception | None = None
     # Default Accept is JSON, but text endpoints (RSS/Atom feeds) want XML.
     default_accept = "application/rss+xml, application/xml, text/xml" if as_text \
@@ -117,9 +131,22 @@ async def _request(
                 r = await client.request(method, url, params=params,
                                          headers=headers, json=json)
                 if r.status_code == 200:
+                    # Parse BEFORE recording success — a 200 with a non-JSON body
+                    # (captcha/error page, or a throttle notice served as text)
+                    # must count as a failure, not inflate ok_count.
+                    try:
+                        body = r.text if as_text else r.json()
+                    except Exception as e:  # noqa: BLE001 — malformed 200 body
+                        log.warning("%s -> 200 but unparseable: %s", tag, e)
+                        _record(tag, status=200, error=f"parse: {type(e).__name__}")
+                        return None
                     _record(tag, status=200, ok=True)
-                    return r.text if as_text else r.json()
+                    return body
                 if r.status_code in _RETRY_STATUS and attempt < settings.HTTP_MAX_RETRIES:
+                    # Record the transient failure (so a 429 absorbed by retry
+                    # still updates last_429_ts / the degraded-mode banner) before
+                    # backing off.
+                    _record(tag, status=r.status_code, error=f"retry {r.status_code}")
                     await asyncio.sleep(0.5 * (attempt + 1))
                     continue
                 log.warning("%s -> http %d: %s", tag, r.status_code, r.text[:200])

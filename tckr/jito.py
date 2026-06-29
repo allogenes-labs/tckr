@@ -251,8 +251,11 @@ async def tx_jito_info(signature: str) -> dict | None:
     if not settings.HELIUS_API_KEY:
         log.warning("jito.tx_jito_info: HELIUS_API_KEY not set")
         return None
-    # Key goes in `params`, not the URL string, so it can't leak via
-    # exception objects' request.url or URL-logging proxies.
+    # Key goes in `params` rather than hand-spliced into the URL string. Note
+    # this keeps it out of tckr's own logs (we log the `label`, never the URL),
+    # but httpx still renders the final URL — query string included — when its
+    # own logger is at INFO. Consumers handling Helius keys should keep the
+    # `httpx` logger at WARNING. (Helius has no header-auth alternative.)
     body = await _http.post_json(
         "https://api.helius.xyz/v0/transactions",
         {"transactions": [sig]},
