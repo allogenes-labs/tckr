@@ -169,7 +169,7 @@ async def token_info(network: str, address: str) -> dict | None:
     """Token snapshot by contract address: price, FDV, market cap, 24h volume."""
     net = settings.normalize_network(network) or settings.NETWORK_BASE
     address = (address or "").strip()
-    if not address:
+    if not address or not _http.safe_path_segment(address):
         return None
     ck = ("token", net, address.lower())
 
@@ -207,7 +207,7 @@ async def pool_ohlcv(
         log.warning("geckoterminal: unsupported timeframe %r", timeframe)
         return None
     pool_address = (pool_address or "").strip()
-    if not pool_address:
+    if not pool_address or not _http.safe_path_segment(pool_address):
         return None
 
     ck = ("ohlcv", net, pool_address.lower(), timeframe, aggregate, limit, currency)

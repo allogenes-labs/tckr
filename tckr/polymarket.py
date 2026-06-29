@@ -162,6 +162,8 @@ async def _resolve_tag_id(tag: str) -> int | None:
     if t in _tag_id_cache:
         return _tag_id_cache[t]
     slug = t.lower().replace(" ", "-")
+    if not _http.safe_path_segment(slug):
+        return None
     row = await _get(f"/tags/slug/{slug}", label=f"polymarket tag {slug}")
     tid: int | None = None
     if isinstance(row, dict) and row.get("id") is not None:
@@ -429,7 +431,8 @@ async def book(token_id: str) -> dict | None:
     `book` is per-token-id and reflects the live limit-order book, which is
     the right thing to fill against.
     """
-    if not token_id:
+    token_id = str(token_id or "").strip()
+    if not token_id or not _http.safe_path_segment(token_id):
         return None
     ttl = settings.POLYMARKET_TTL_S
     key = (f"/book/{token_id}", ())

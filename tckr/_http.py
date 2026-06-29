@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from datetime import UTC, datetime
 from typing import Any
 
@@ -26,6 +27,39 @@ from tckr import settings
 log = logging.getLogger("tckr.http")
 
 _RETRY_STATUS = {429, 500, 502, 503, 504}
+
+
+# ---------------------------------------------------------------------------
+# URL path-segment safety.
+#
+# Source modules interpolate user-supplied identifiers (contract addresses,
+# tickers, market slugs, coin ids) straight into request URLs, e.g.
+# f"{_BASE}/coins/{coin_id}". A hostile value containing "/", "..", "?", "#",
+# whitespace, or pre-encoded "%2e" could break out of its path position,
+# traverse the path, or smuggle a query/fragment onto the request. Callers
+# validate with `safe_path_segment` and return their graceful None/[] on
+# rejection (the package never raises on bad input).
+#
+# Denylist, not an alphanumeric allowlist: a single segment may legitimately
+# contain commas (dexscreener batches several addresses into one segment) or
+# hyphens (Polymarket market slugs), so we reject only the genuinely dangerous
+# characters.
+# ---------------------------------------------------------------------------
+
+_UNSAFE_PATH_SEGMENT = re.compile(r"[\x00-\x20/\\?#%]")
+
+
+def safe_path_segment(value: str | None) -> bool:
+    """True when `value` is safe to interpolate as URL path segment(s).
+
+    Rejects empty values, `.`/`..` traversal, and any path separator, query/
+    fragment marker, raw percent sign, whitespace, or control character. Crypto
+    addresses, tickers, and slugs are all accepted; injection payloads are not.
+    """
+    s = value or ""
+    if not s or s == "." or ".." in s:
+        return False
+    return _UNSAFE_PATH_SEGMENT.search(s) is None
 
 
 # ---------------------------------------------------------------------------

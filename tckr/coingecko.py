@@ -148,6 +148,9 @@ async def coin(coin_id: str, *, localization: bool = False,
 
     Heavy payload — use `simple_price` if you only need the price.
     """
+    coin_id = (coin_id or "").strip()
+    if not coin_id or not _http.safe_path_segment(coin_id):
+        return None
     params = {
         "localization": str(bool(localization)).lower(),
         "tickers": str(bool(tickers)).lower(),
@@ -172,6 +175,9 @@ async def market_chart(coin_id: str, *, days: int | str = 30,
 
     Returns {prices: [[ts_ms, price], ...], market_caps: [...], total_volumes: [...]}.
     """
+    coin_id = (coin_id or "").strip()
+    if not coin_id or not _http.safe_path_segment(coin_id):
+        return None
     params: dict = {"vs_currency": vs_currency, "days": str(days)}
     if interval:
         params["interval"] = interval

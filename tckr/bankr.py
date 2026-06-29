@@ -194,7 +194,7 @@ async def launch(token_address: str) -> dict | None:
     Base launches; the Solana mint format for Solana launches.
     """
     addr = (token_address or "").strip()
-    if not addr:
+    if not addr or not _http.safe_path_segment(addr):
         return None
     ck = ("launch", addr.lower())
     cached = _cache.get(ck, settings.LAUNCHPAD_TOKEN_TTL_S)

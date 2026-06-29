@@ -99,6 +99,8 @@ async def token_pairs(address, *, chain: str | None = None) -> list[dict]:
     if not addrs:
         return []
     joined = ",".join(addrs)
+    if not _http.safe_path_segment(joined):  # comma-batched addresses share one segment
+        return []
     ck = ("token_pairs", joined.lower())
 
     async def _fetch() -> list[dict] | None:
@@ -139,7 +141,7 @@ async def pair(chain: str, pair_address: str) -> dict | None:
     """A single DEX pair by chain + pair address."""
     ds_chain = _ds_chain(chain)
     pair_address = (pair_address or "").strip()
-    if not ds_chain or not pair_address:
+    if not ds_chain or not pair_address or not _http.safe_path_segment(pair_address):
         return None
     ck = ("pair", ds_chain, pair_address.lower())
 

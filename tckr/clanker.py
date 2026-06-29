@@ -295,7 +295,7 @@ async def holders(token_address: str) -> dict | None:
     metric so callers don't need a second module for this one field.
     """
     addr = (token_address or "").strip()
-    if not addr:
+    if not addr or not _http.safe_path_segment(addr):
         return None
     ck = ("holders", addr.lower())
     cached = _cache.get(ck, settings.LAUNCHPAD_TOKEN_TTL_S)

@@ -144,7 +144,7 @@ async def _full_chain(underlying: str) -> dict | None:
     Returns {underlying, current_price, chain_ts, contracts: [...]} or None.
     """
     sym = (underlying or "").strip().upper().lstrip("_")
-    if not sym:
+    if not sym or not _http.safe_path_segment(sym):
         return None
     ck = ("full", sym)
     cached = _cache.get(ck, settings.OPTIONS_TTL_S)

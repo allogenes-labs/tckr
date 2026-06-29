@@ -1,5 +1,5 @@
 """Infra regression tests for audit P2 fixes: bounded TTLCache + cryptonews
-XML-expansion guard."""
+XML-expansion guard + URL path-segment validation."""
 from __future__ import annotations
 
 import pytest
@@ -28,6 +28,50 @@ def test_ttlcache_put_refreshes_recency():
     assert c.get(("a",), 1e9) == 11
     assert c.get(("b",), 1e9) is None
     assert c.get(("d",), 1e9) == 4
+
+
+def test_safe_path_segment_accepts_real_identifiers():
+    """Legitimate crypto/options identifiers must pass: hex addresses, base58
+    mints, tickers, market slugs, OCC symbols, and comma-batched addresses."""
+    from tckr._http import safe_path_segment
+    good = [
+        "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",   # EVM
+        "So11111111111111111111111111111111111111112",  # Solana mint (base58)
+        "bitcoin", "AAPL", "SPX",                        # ids / tickers
+        "AAPL260619C00150000",                           # OCC symbol
+        "will-trump-win-2028",                           # Polymarket slug
+        "0xaaa,0xbbb,0xccc",                             # dexscreener batch
+    ]
+    assert all(safe_path_segment(s) for s in good)
+
+
+def test_safe_path_segment_rejects_injection():
+    """Path separators, traversal, query/fragment markers, raw percent signs,
+    whitespace, control chars, and empties must be rejected."""
+    from tckr._http import safe_path_segment
+    bad = [
+        "", None, ".", "..", "../../etc/passwd", "a/b",
+        "a\\b", "a?x=1", "a#frag", "a%2e%2e", "a b", "a\tb", "a\nb",
+    ]
+    assert not any(safe_path_segment(s) for s in bad)
+
+
+@pytest.mark.asyncio
+async def test_path_validation_short_circuits_before_fetch(monkeypatch):
+    """A hostile identifier must return the module's graceful empty value
+    WITHOUT issuing an HTTP request (the URL is never constructed)."""
+    from tckr import _http, dexscreener, geckoterminal
+
+    async def boom(*args, **kwargs):  # any HTTP call here is a test failure
+        raise AssertionError("HTTP request issued for a rejected path segment")
+
+    monkeypatch.setattr(_http, "get_json", boom)
+    geckoterminal._cache._d.clear()
+    dexscreener._cache._d.clear()
+
+    assert await geckoterminal.token_info("solana", "../../admin") is None
+    assert await dexscreener.pair("base", "a/b/c") is None
+    assert await dexscreener.token_pairs("0xabc/../x") == []
 
 
 @pytest.mark.asyncio

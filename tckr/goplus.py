@@ -358,7 +358,7 @@ async def address_security(address: str) -> dict | None:
     """Wallet-level scam/phishing flags for one EVM address. Useful for
     inspecting a token's creator or owner address."""
     addr = (address or "").strip()
-    if not addr:
+    if not addr or not _http.safe_path_segment(addr):
         return None
     ck = ("address_security", addr.lower())
     cached = _cache.get(ck, settings.SECURITY_TTL_S)

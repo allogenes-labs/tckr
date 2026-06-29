@@ -219,7 +219,7 @@ async def option_chain(
     is added so callers know more contracts exist.
     """
     sym = (underlying or "").strip().upper()
-    if not sym:
+    if not sym or not _http.safe_path_segment(sym):
         return None
     headers = _headers()
     if not headers:

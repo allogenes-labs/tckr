@@ -30,7 +30,18 @@ All notable changes to `tckr` are documented here. Format roughly follows
 - **Security/infra.** `_http` parses before recording success (accurate health
   stats), records retried 429s, and never logs a URL-embedded key; `cryptonews`
   guards against XML entity-expansion (size cap + DTD rejection); negative
-  `TCKR_*` env values fall back to defaults.
+  `TCKR_*` env values fall back to defaults. User-supplied identifiers
+  (addresses, tickers, slugs, coin/token ids) are validated with
+  `_http.safe_path_segment` before they're interpolated into a request URL —
+  path separators, `.`/`..` traversal, query/fragment markers, raw `%`,
+  whitespace, and control chars are rejected (graceful `None`/`[]`, no request
+  issued) across coingecko, geckoterminal, dexscreener, goplus, options, cboe,
+  bankr, clanker, and polymarket.
+- **Thundering-herd hardening.** Added `TTLCache.cached()` — the canonical
+  double-checked per-key-lock fetch in one place — and converted the inline-cache
+  modules (geckoterminal, birdeye, dexscreener, options, neynar) to it, so
+  concurrent cold-key callers share a single upstream fetch. As a side effect,
+  dexscreener no longer caches `[]` from a failed fetch.
 - **Accuracy.** `solscan` public no-key API retired → now keyed-free; The Graph
   hosted service (`query_subgraph_name`) sunset → use `query_subgraph(id, …)`
   (keyless gateway-by-id still works); `jito` reclassified keyless (tip floor /
