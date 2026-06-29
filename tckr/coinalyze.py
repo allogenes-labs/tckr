@@ -122,15 +122,23 @@ async def _get(path: str, *, params: dict | None = None, label: str = "",
     params.setdefault("api_key", settings.COINALYZE_API_KEY)
     # Cache key omits the api_key so a future key rotation doesn't blow the cache.
     ck = (path, tuple(sorted((k, v) for k, v in params.items() if k != "api_key")))
-    if ttl_s is not None:
+    if ttl_s is None:
+        return await _http.get_json(f"{_BASE}/{path}", params=params,
+                                    label=label or f"coinalyze {path}")
+    cached = _cache.get(ck, ttl_s)
+    if cached is not None:
+        return cached
+    # Double-checked lock: concurrent callers on a cold key wait for the first
+    # fetch instead of each firing a duplicate request at a rate-limited upstream.
+    async with _cache.lock(ck):
         cached = _cache.get(ck, ttl_s)
         if cached is not None:
             return cached
-    body = await _http.get_json(f"{_BASE}/{path}", params=params,
-                                label=label or f"coinalyze {path}")
-    if body is not None and ttl_s is not None:
-        _cache.put(ck, body)
-    return body
+        body = await _http.get_json(f"{_BASE}/{path}", params=params,
+                                    label=label or f"coinalyze {path}")
+        if body is not None:
+            _cache.put(ck, body)
+        return body
 
 
 # --------------------------- exchanges + markets ---------------------------

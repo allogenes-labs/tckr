@@ -151,30 +151,38 @@ async def _full_chain(underlying: str) -> dict | None:
     if cached is not None:
         return cached
 
-    body = await _http.get_json(
-        f"{_BASE}/{_path_symbol(sym)}.json",
-        headers=_HEADERS,
-        label=f"cboe options {sym}",
-    )
-    if not isinstance(body, dict):
-        return None
-    data = body.get("data") or {}
-    raw_opts = data.get("options") or []
-    contracts: list[dict] = []
-    for r in raw_opts:
-        if isinstance(r, dict):
-            row = _parse_contract(r)
-            if row is not None:
-                contracts.append(row)
-    contracts.sort(key=_sort_key)
-    out = {
-        "underlying": sym,
-        "current_price": _f(data.get("current_price")),
-        "chain_ts": body.get("timestamp"),
-        "contracts": contracts,
-    }
-    _cache.put(ck, out)
-    return out
+    # Double-checked lock: CBOE chains are large (AAPL ~1.6MB, SPX ~13MB), so a
+    # thundering herd of concurrent cold-cache callers is especially costly —
+    # let the first fetch run while the rest await the lock and reuse its result.
+    async with _cache.lock(ck):
+        cached = _cache.get(ck, settings.OPTIONS_TTL_S)
+        if cached is not None:
+            return cached
+
+        body = await _http.get_json(
+            f"{_BASE}/{_path_symbol(sym)}.json",
+            headers=_HEADERS,
+            label=f"cboe options {sym}",
+        )
+        if not isinstance(body, dict):
+            return None
+        data = body.get("data") or {}
+        raw_opts = data.get("options") or []
+        contracts: list[dict] = []
+        for r in raw_opts:
+            if isinstance(r, dict):
+                row = _parse_contract(r)
+                if row is not None:
+                    contracts.append(row)
+        contracts.sort(key=_sort_key)
+        out = {
+            "underlying": sym,
+            "current_price": _f(data.get("current_price")),
+            "chain_ts": body.get("timestamp"),
+            "contracts": contracts,
+        }
+        _cache.put(ck, out)
+        return out
 
 
 # --------------------------- public surface (mirrors tckr.options) ---------------------------
