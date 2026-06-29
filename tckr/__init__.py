@@ -31,6 +31,9 @@ Import source modules directly:
     thegraph        GraphQL access to indexed subgraphs (Uniswap, Aave, ...)
     options         US equity/ETF option chains + greeks + IV (Alpaca, free key)
     cboe            keyless option chains + greeks + IV + OI (CBOE delayed; incl. indices)
+    cryptonews      keyless crypto headline aggregator (Cointelegraph/Decrypt/… RSS)
+    gdelt           keyless global news/event firehose + tone timelines (macro/tradfi)
+    finnhub         tradfi + crypto market news, per-ticker company news (free key)
 
 Unified cascades (best-effort across providers):
 
@@ -39,6 +42,8 @@ Unified cascades (best-effort across providers):
     quotes          USD spot price cascade: CoinGecko → Hyperliquid
     history         daily candle cascade:   CoinGecko market_chart → HL candleSnapshot
                     (`candles` = closes; `ohlc` = full OHLC bars, HL-only, for ATR etc.)
+    news            headline cascade: cryptonews + gdelt + finnhub (keyed),
+                    merged, de-duped, recency-sorted; each item tagged by provider
 
 Use the cascades when you want "best available" data without choosing a
 provider. They carry a `source` field on each result so the caller can tell

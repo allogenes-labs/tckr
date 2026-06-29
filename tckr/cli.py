@@ -11,6 +11,7 @@ Commands (`tckr <cmd> --help` for details):
     options US equity/ETF option chain + greeks (Alpaca; --expirations to list expiries)
     tvl     DefiLlama chain TVL (one chain + protocols, or top by TVL)
     wallet  on-chain wallet holdings (Base, Ethereum, or Solana)
+    news    latest headlines across providers (crypto + tradfi); optional topic
     status  show which modules are configured + their tier
     update  upgrade tckr to the latest PyPI release (--check to dry-run)
 """
@@ -468,6 +469,29 @@ async def cmd_wallet(args) -> None:
               f"(use base, eth, or solana)")
 
 
+async def cmd_news(args) -> None:
+    from tckr import news
+
+    items = await news.latest(args.query, limit=args.limit,
+                              include=args.provider or None)
+    q = f' "{args.query}"' if args.query else ""
+    prov = f"  [{', '.join(args.provider)}]" if args.provider else ""
+    print(f"# news{q}{prov} (n={len(items)})\n")
+    if not items:
+        print("  (no items — providers may be rate-limited, e.g. GDELT's "
+              "~1 req/5s soft limit; retry, or set FINNHUB_API_KEY for tradfi)")
+        return
+    for it in items:
+        ts = it.get("published_at") or ""
+        # ISO 'YYYY-MM-DDTHH:MM:...' -> 'MM-DD HH:MM' (UTC, as upstreams report)
+        when = (ts[5:16].replace("T", " ")) if len(ts) >= 16 else "??-?? ??:??"
+        origin = f"{it.get('provider') or '?'}/{it.get('source') or '?'}"
+        title = (it.get("title") or "").replace("\n", " ").strip()
+        print(f"  {when:<12} {origin[:26]:<26} {title[:72]}")
+        if args.urls:
+            print(f"  {'':<12} {it.get('url')}")
+
+
 # --------------------------- status dashboard ---------------------------
 
 # "ANSI Shadow" block logo, one line per _ansi.LOGO_FADE entry.
@@ -680,6 +704,16 @@ def _build_parser() -> argparse.ArgumentParser:
     sp.add_argument("address")
     sp.add_argument("--limit", type=int, default=20)
 
+    sp = sub.add_parser("news",
+                        help="latest headlines across providers (crypto + tradfi)")
+    sp.add_argument("query", nargs="?",
+                     help="optional topic filter, e.g. 'ethereum ETF' (token-AND)")
+    sp.add_argument("--limit", type=int, default=20)
+    sp.add_argument("--provider", action="append",
+                     choices=("cryptonews", "gdelt", "finnhub"),
+                     help="restrict to provider(s); repeatable")
+    sp.add_argument("--urls", action="store_true", help="print each item's URL")
+
     sp = sub.add_parser("status", help="capability dashboard — what's usable now + what a key unlocks")
     sp.add_argument("--json", action="store_true",
                      help="emit JSON instead of the human-readable dashboard")
@@ -703,6 +737,7 @@ def main(argv=None) -> int:
         "options": cmd_options,
         "tvl":    cmd_tvl,
         "wallet": cmd_wallet,
+        "news":   cmd_news,
         "status": cmd_status,
         "update": cmd_update,
     }

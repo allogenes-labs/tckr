@@ -245,6 +245,26 @@ REGISTRY: dict[str, ModuleSpec] = {
               "Keyless via public gateway (throttled); THEGRAPH_API_KEY uses "
               "the decentralized gateway with higher quota.",
     ),
+
+    # ---------- News & events ----------
+    "cryptonews": ModuleSpec(
+        "cryptonews", Tier.KEYLESS_FREE,
+        notes="Keyless crypto headline aggregator over major outlet RSS feeds "
+              "(Cointelegraph, Decrypt, The Block, CoinDesk). Normalized + "
+              "merged; client-side topic filter. No signup, no key.",
+    ),
+    "gdelt": ModuleSpec(
+        "gdelt", Tier.KEYLESS_FREE,
+        notes="GDELT DOC 2.0 — keyless global news/event firehose across ~65 "
+              "languages. Macro + tradfi market-movers by keyword, plus tone "
+              "(sentiment) timelines. Soft limit ~1 req / 5s (cache absorbs it).",
+    ),
+    "finnhub": ModuleSpec(
+        "finnhub", Tier.KEYED_FREE,
+        required_env=("FINNHUB_API_KEY",),
+        notes="Tradfi + crypto market news (general/forex/crypto/merger) and "
+              "per-ticker company news. Free signup at finnhub.io, ~60 req/min.",
+    ),
 }
 
 
@@ -265,6 +285,7 @@ CATEGORY_ORDER = (
     "Security",
     "Social & research",
     "TradFi & prediction",
+    "News & events",
 )
 
 # name -> (category, blurb)
@@ -298,6 +319,9 @@ _DASHBOARD: dict[str, tuple[str, str]] = {
     "cboe":          ("TradFi & prediction", "options chains + greeks"),
     "options":       ("TradFi & prediction", "equity/ETF options + greeks"),
     "polymarket":    ("TradFi & prediction", "prediction-market odds"),
+    "cryptonews":    ("News & events", "crypto outlet headlines (RSS)"),
+    "gdelt":         ("News & events", "global news/event firehose"),
+    "finnhub":       ("News & events", "tradfi + market news"),
 }
 
 

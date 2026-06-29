@@ -6,7 +6,7 @@
 
 **Free crypto data in one pip install. No keys required to start.**
 
-Building anything with crypto data usually means signing up for five APIs, writing the same retry loop five times, juggling rate limits, and watching it all break when one provider goes down. tckr collapses that into one Python package: 13 of the most-used sources work the moment you install it, and another 10 unlock with free signups. The same registry doubles as an agent toolkit for Claude, OpenAI, MCP, and LangChain — so if you're plugging crypto data into an LLM, it's one install away.
+Building anything with crypto data usually means signing up for five APIs, writing the same retry loop five times, juggling rate limits, and watching it all break when one provider goes down. tckr collapses that into one Python package: 17 of the most-used sources work the moment you install it, and another 12 unlock with free signups. The same registry doubles as an agent toolkit for Claude, OpenAI, MCP, and LangChain — so if you're plugging crypto data into an LLM, it's one install away.
 
 ```bash
 pip install tckr              # data layer
@@ -37,7 +37,7 @@ No signup, no key, no rate-limit boilerplate. If CoinGecko 429s, the call quietl
 
 ## What's in the box
 
-26 data sources, grouped by the corners of crypto people usually glue together by hand:
+32 data sources, grouped by the corners of crypto people usually glue together by hand:
 
 - **Prices & oracles** — CoinGecko, Hyperliquid, Pyth
 - **DEX & on-chain** — GeckoTerminal, DexScreener, Alchemy (EVM), Helius (Solana)
@@ -46,8 +46,9 @@ No signup, no key, no rate-limit boilerplate. If CoinGecko 429s, the call quietl
 - **Token safety** — GoPlus, Honeypot, LP-lock detection
 - **DeFi data** — DefiLlama (TVL, yields), Etherscan, The Graph
 - **Social & prediction** — LunarCrush, Neynar (Farcaster), Polymarket
+- **News & events** — CryptoNews (outlet RSS), GDELT (global events), Finnhub (tradfi)
 
-13 sources are keyless. 10 more unlock with free signups. 3 paid keys add deeper coverage. Modules without their key gracefully no-op, so a partial install still works — and `tckr status` tells you what's live right now.
+17 sources are keyless. 12 more unlock with free signups. 3 paid keys add deeper coverage. Modules without their key gracefully no-op, so a partial install still works — and `tckr status` tells you what's live right now.
 
 A second, fuller example:
 
@@ -90,12 +91,12 @@ from tckr.agent_toolkit.adapters.openai import get_openai_tools, get_anthropic_t
 from tckr.agent_toolkit.adapters.langchain import get_langchain_tools
 ```
 
-All adapters serve the same 44 tools from one platform-neutral core. Each tool description auto-injects a tier tag (`[keyless]`, `[keyed-free: needs X]`, `[paid OK]`) from the capability registry, so the model knows what'll work before it tries. A `capabilities` introspection tool lets the agent self-discover the live state:
+All adapters serve the same 67 tools from one platform-neutral core. Each tool description auto-injects a tier tag (`[keyless]`, `[keyed-free: needs X]`, `[paid OK]`) from the capability registry, so the model knows what'll work before it tries. A `capabilities` introspection tool lets the agent self-discover the live state:
 
 ```python
 import tckr
 print(tckr.capabilities()["summary"])
-# {'total': 26, 'configured': 14, 'by_tier': {'keyless-free': 13, 'keyed-free': 10, 'keyed-paid': 3}}
+# {'total': 32, 'configured': 17, 'by_tier': {'keyless-free': 17, 'keyed-free': 12, 'keyed-paid': 3}}
 ```
 
 ## Unlock more with free API keys
@@ -113,6 +114,7 @@ Free signups, no credit cards. Ranked by what we actually use in production:
 | `COINGECKO_DEMO_API_KEY` | Higher rate limit on the most-used price endpoint — free tier 429s under any real load | [coingecko.com](https://coingecko.com) |
 | `ETHERSCAN_API_KEY` | ~70 EVM chains via the unified V2 API (one key covers ETH, Base, Arb, Op, Polygon, BNB, …) | [etherscan.io](https://etherscan.io) |
 | `LUNARCRUSH_API_KEY` | Galaxy Score, AltRank, topic feeds, social sentiment | [lunarcrush.com](https://lunarcrush.com) |
+| `FINNHUB_API_KEY` | Tradfi + crypto market news (general/forex/crypto/merger) + per-ticker company news; ~60 req/min | [finnhub.io](https://finnhub.io) |
 | `THEGRAPH_API_KEY` | Higher-quota subgraph access (Uniswap, Aave, etc.) — public gateway works keyless but throttles fast | [thegraph.com](https://thegraph.com) |
 
 **Tip:** Alchemy + Helius alone open up everything on-chain (EVM + Solana). Add Coinalyze if you care about perps; Birdeye if you focus on Solana memecoins.
@@ -147,6 +149,8 @@ All keys are optional. Modules without their key gracefully no-op (return `None`
 | `polymarket` | keyless | — | Prediction-market odds (binary YES/NO) |
 | `cboe` | keyless | — | Option chains + greeks + IV + OI/volume, incl. indices (CBOE delayed ~15m; unofficial). Keyless fallback under the `options` cascade |
 | `pyth` | keyless | — | On-chain oracle prices: ~400 feeds (crypto, equities, FX, metals) |
+| `cryptonews` | keyless | — | Crypto outlet headlines aggregated from RSS (Cointelegraph, Decrypt, The Block, CoinDesk) |
+| `gdelt` | keyless | — | Global news/event firehose (~65 languages); macro/tradfi market-movers by keyword + tone timelines |
 | `solscan` | keyless / keyed | `SOLSCAN_API_KEY` (Pro) | Solana block explorer |
 | `thegraph` | keyless / keyed | `THEGRAPH_API_KEY` | Generic GraphQL access to indexed subgraphs |
 | `alchemy` | keyed-free | `ALCHEMY_API_KEY` | EVM (Base, ETH) wallet balances + transfers |
@@ -156,6 +160,7 @@ All keys are optional. Modules without their key gracefully no-op (return `None`
 | `options` | keyed-free | `ALPACA_API_KEY` + `ALPACA_API_SECRET` | US equity/ETF option chains + greeks + IV (Alpaca; free `indicative` feed) |
 | `etherscan` | keyed-free | `ETHERSCAN_API_KEY` | Unified EVM block explorer (~70 chains via `chainid`) |
 | `lunarcrush` | keyed-free | `LUNARCRUSH_API_KEY` | Social sentiment: Galaxy Score, AltRank, topic feeds |
+| `finnhub` | keyed-free | `FINNHUB_API_KEY` | Tradfi + crypto market news + per-ticker company news (~60 req/min) |
 | `lp_lock` | keyed-free | `ALCHEMY_API_KEY` | LP-lock detection: Uniswap V2 / V3 / V4 on Base / ETH |
 | `jito` | keyed-free | `HELIUS_API_KEY` | Solana MEV: tip floor, bundle status, snipe-score |
 | `pumpfun` | keyed-free | `MORALIS_API_KEY` *or* `BITQUERY_API_KEY` (+ `HELIUS_API_KEY` for state) | Pump.fun launchpad: discovery + bonding curve + analytics |
@@ -172,13 +177,15 @@ Sources are designed to chain. A few examples:
 - `clanker.new_tokens()[i]["requestor_fid"]` → `neynar.user_popular_casts(fid)` — what's the deployer saying about their token?
 - `clanker.new_tokens()[i]["pool_address"]` (V4 PoolId) → `lp_lock(pool_id)` — is the Clanker LP locked?
 - `pumpfun.top_traders(mint)` → `wallet_pnl(wallet)` — is the top buyer actually profitable across their other trades?
+- `gdelt.tone_timeline("federal reserve")` → `polymarket.top_volume()` — is global-press sentiment on the Fed turning ahead of the rate-decision market's odds?
+- `news.latest("ethereum ETF")` → `quotes.get(["ETH"])` + `history.candles(["ETH"])` — pair the headline flow on a catalyst with live price + recent candles for an agent's event read.
 
-## Fallback cascades: `tckr.quotes` and `tckr.history`
+## Fallback cascades: `tckr.quotes`, `tckr.history`, `tckr.news`
 
-Real consumers usually want best-available data, not a specific provider. Two cascade modules wrap the common pattern so callers don't reimplement it:
+Real consumers usually want best-available data, not a specific provider. Three cascade modules wrap the common pattern so callers don't reimplement it:
 
 ```python
-from tckr import quotes, history
+from tckr import quotes, history, news
 
 # USD spot price, CoinGecko → Hyperliquid fallback
 q = await quotes.get(["BTC", "ETH", "NEAR", "HYPE"])
@@ -186,9 +193,13 @@ q = await quotes.get(["BTC", "ETH", "NEAR", "HYPE"])
 
 # 30-day daily candles, CoinGecko market_chart → Hyperliquid candleSnapshot
 h = await history.candles(["BTC", "HYPE"], days=30)
+
+# Latest headlines merged across every available provider (keyless + keyed)
+items = await news.latest("ethereum ETF", limit=20)
+# [{'title': ..., 'url': ..., 'source': 'cointelegraph', 'provider': 'cryptonews', 'published_at': ...}, ...]
 ```
 
-Each result carries a `source` field so callers can detect when fallback ran. The same cascades are exposed as agent tools (`quote`, `candles`).
+The quote/history results carry a `source` field so callers can detect when fallback ran; `news` items carry a `provider` field naming which source produced each one. The `news` cascade fans out across `cryptonews` (keyless crypto RSS), `gdelt` (keyless global events), and `finnhub` (when keyed), de-duplicates by URL, and sorts newest-first. All three cascades are exposed as agent tools (`quote`, `candles`, `news`).
 
 Hyperliquid is the canonical free-tier fallback: keyless, no rate limit at typical reading volume, and covers ~230 majors + mid-caps — almost the entire CoinGecko "interesting" universe minus long-tail alts (which belong in DEX pool contexts anyway).
 

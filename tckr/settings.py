@@ -113,6 +113,8 @@ BANKR_API_KEY          = os.environ.get("BANKR_API_KEY", "").strip()
 ALPACA_API_KEY         = os.environ.get("ALPACA_API_KEY", "").strip()
 ALPACA_API_SECRET      = os.environ.get("ALPACA_API_SECRET", "").strip()
 ALPACA_OPTIONS_FEED    = _env_str("ALPACA_OPTIONS_FEED", "indicative")
+# Finnhub — tradfi/market + crypto news. Free signup (~60 req/min) at finnhub.io.
+FINNHUB_API_KEY        = os.environ.get("FINNHUB_API_KEY", "").strip()
 
 # ---------- Pump.fun ----------
 PUMPFUN_DISCOVERY_TTL_S = _env_int("TCKR_PUMPFUN_DISCOVERY_TTL_S", 30)
@@ -186,6 +188,14 @@ TOKENTERMINAL_HISTORY_TTL_S = _env_int("TCKR_TOKENTERMINAL_HISTORY_TTL_S", 3600)
 
 # ---------- The Graph ----------
 THEGRAPH_TTL_S           = _env_int("TCKR_THEGRAPH_TTL_S", 60)
+
+# ---------- News & events ----------
+# Crypto-outlet RSS (cryptonews) — headlines refresh on the order of minutes.
+CRYPTONEWS_TTL_S          = _env_int("TCKR_CRYPTONEWS_TTL_S", 300)
+# GDELT DOC API — respect the ~1 req / 5s soft limit; cache keeps us well under.
+GDELT_TTL_S               = _env_int("TCKR_GDELT_TTL_S", 300)
+# Finnhub market/company news — fairly fast-moving headline stream.
+FINNHUB_TTL_S             = _env_int("TCKR_FINNHUB_TTL_S", 120)
 
 # ---------- Options (Alpaca) ----------
 # Quotes/greeks move continuously, but the free `indicative` feed is delayed

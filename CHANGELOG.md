@@ -6,6 +6,28 @@ All notable changes to `tckr` are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Added
+- **News & events — three new data sources + a unified cascade.** A new
+  "News & events" category covering crypto-native and market-moving tradfi news:
+  - **`cryptonews`** (keyless) — crypto headline aggregator over major outlet
+    RSS feeds (Cointelegraph, Decrypt, The Block, CoinDesk), parsed with the
+    standard library (no new dependency), merged + de-duplicated, with a
+    client-side topic filter. No signup, no key.
+  - **`gdelt`** (keyless) — GDELT DOC 2.0 global news/event firehose across ~65
+    languages. `articles(query)` for macro/tradfi market-movers by keyword and
+    `tone_timeline(query)` for coverage-sentiment trends. Respects GDELT's soft
+    ~1 req/5s limit via the per-source cache.
+  - **`finnhub`** (keyed-free, `FINNHUB_API_KEY`) — tradfi + crypto market news
+    (general/forex/crypto/merger) and per-ticker company news. Free signup,
+    ~60 req/min.
+  - **`tckr.news`** cascade — `news.latest(query)` fans out across every
+    available provider, de-duplicates by URL, sorts newest-first, and tags each
+    item with the `provider` that produced it (mirrors `quotes`/`history`).
+- **Agent tools:** `news`, `cryptonews_latest`, `gdelt_articles`,
+  `gdelt_tone_timeline`, `finnhub_market_news`, `finnhub_company_news`.
+- **`_http.get_text`** — raw-text GET helper (shares retry/redirect/health
+  tracking with `get_json`) for non-JSON upstreams like RSS feeds.
+
 ## [0.3.4] — 2026-06-17
 
 ### Added

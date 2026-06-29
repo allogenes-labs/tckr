@@ -50,6 +50,8 @@ def test_every_data_source_module_in_registry():
         "options",
         # Keyless options fallback (CBOE delayed):
         "cboe",
+        # News & events:
+        "cryptonews", "gdelt", "finnhub",
     }
     actual = set(registry.REGISTRY.keys())
     missing = expected - actual

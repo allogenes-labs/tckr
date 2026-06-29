@@ -1610,6 +1610,151 @@ async def _t_opt_expirations(args: dict):
 
 
 # ============================================================================
+# News & events — crypto + tradfi headlines and global event/sentiment data
+# ============================================================================
+
+@register_tool(
+    "news",
+    "Best-effort latest news across ALL available providers — crypto outlet RSS "
+    "(cryptonews, keyless), the GDELT global event firehose (keyless), and "
+    "Finnhub market news (if FINNHUB_API_KEY is set). Merged, de-duplicated, "
+    "newest-first; each item tagged with the `provider` that produced it. Prefer "
+    "this over the per-provider tools when you just want 'what's happening', "
+    "optionally about a topic. Returns [{title, url, source, published_at, "
+    "published_ts, summary, image, provider}]. With no `query` you get the latest "
+    "crypto + (if keyed) tradfi headlines plus GDELT's default market-movers.",
+    module="",  # cascade — spans keyless + keyed providers
+    schema={
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "description": "Optional topic, e.g. 'ethereum ETF', 'federal reserve', 'TSLA'"},
+            "limit": {"type": "integer", "default": 25, "description": f"Max rows (max {MAX_ROWS})"},
+        },
+    },
+)
+async def _t_news(args: dict):
+    from tckr import news
+    rows = await news.latest(args.get("query"), limit=int(args.get("limit", 25)))
+    return _cap(rows, args.get("limit", 25))
+
+
+@register_tool(
+    "cryptonews_latest",
+    "Keyless crypto headlines aggregated across major outlet RSS feeds "
+    "(Cointelegraph, Decrypt, The Block, CoinDesk). Merged + newest-first; "
+    "`query` filters client-side (substring on title+summary). Returns "
+    "[{title, url, source, published_at, summary, author, categories, image}].",
+    module="cryptonews",
+    schema={
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "description": "Optional substring topic filter"},
+            "limit": {"type": "integer", "default": 25, "description": f"Max rows (max {MAX_ROWS})"},
+        },
+    },
+)
+async def _t_cryptonews_latest(args: dict):
+    from tckr import cryptonews
+    rows = await cryptonews.latest(query=args.get("query"),
+                                   limit=int(args.get("limit", 25)))
+    return _cap(rows, args.get("limit", 25))
+
+
+@register_tool(
+    "gdelt_articles",
+    "Keyless global-press search via GDELT DOC 2.0 — best tool for MACRO / TRADFI "
+    "market-moving events (central banks, regulation, geopolitics) and any "
+    "non-crypto news, across ~65 languages. Query syntax: space=AND, explicit "
+    "uppercase OR, \"quoted phrases\", operators like sourcecountry:US / "
+    "sourcelang:english / domain:reuters.com embedded in the query. Returns "
+    "[{title, url, source, published_at, language, source_country, image}]. "
+    "Soft limit ~1 req/5s — cached.",
+    module="gdelt",
+    schema={
+        "type": "object",
+        "properties": {
+            "query":    {"type": "string", "description": "GDELT query, e.g. '\"federal reserve\" (rate OR inflation)'"},
+            "timespan": {"type": "string", "default": "3d", "description": "Window: '1d','3d','1w','24h','30min'"},
+            "limit":    {"type": "integer", "default": 25, "description": f"Max rows (max {MAX_ROWS})"},
+        },
+        "required": ["query"],
+    },
+)
+async def _t_gdelt_articles(args: dict):
+    from tckr import gdelt
+    rows = await gdelt.articles(args["query"],
+                                timespan=args.get("timespan", "3d"),
+                                max_records=int(args.get("limit", 25)))
+    return _cap(rows, args.get("limit", 25))
+
+
+@register_tool(
+    "gdelt_tone_timeline",
+    "Average sentiment (tone) of global news coverage of a topic over time, via "
+    "GDELT TimelineTone (keyless). Negative = more negative coverage, ~0 neutral, "
+    "positive = upbeat. A macro-narrative gauge ('is sentiment on X turning?'). "
+    "Returns [{date, tone}].",
+    module="gdelt",
+    schema={
+        "type": "object",
+        "properties": {
+            "query":    {"type": "string", "description": "Topic, e.g. 'bitcoin' or '\"interest rates\"'"},
+            "timespan": {"type": "string", "default": "1w", "description": "Window: '1w','1m','3m', etc."},
+        },
+        "required": ["query"],
+    },
+)
+async def _t_gdelt_tone_timeline(args: dict):
+    from tckr import gdelt
+    return await gdelt.tone_timeline(args["query"],
+                                     timespan=args.get("timespan", "1w"))
+
+
+@register_tool(
+    "finnhub_market_news",
+    "Tradfi + crypto market news firehose via Finnhub (needs free FINNHUB_API_KEY). "
+    "`category` ∈ {general, forex, crypto, merger} — 'general' is the macro/tradfi "
+    "headline stream. Returns newest-first [{title, url, source, published_at, "
+    "summary, image, category, related}].",
+    module="finnhub",
+    schema={
+        "type": "object",
+        "properties": {
+            "category": {"type": "string", "enum": ["general", "forex", "crypto", "merger"],
+                         "default": "general"},
+            "limit":    {"type": "integer", "default": 25, "description": f"Max rows (max {MAX_ROWS})"},
+        },
+    },
+)
+async def _t_finnhub_market_news(args: dict):
+    from tckr import finnhub
+    rows = await finnhub.market_news(args.get("category", "general"))
+    return _cap(rows, args.get("limit", 25))
+
+
+@register_tool(
+    "finnhub_company_news",
+    "Recent news for a single US-listed ticker (e.g. AAPL, NVDA, TSLA) over a "
+    "trailing-days window, via Finnhub (needs free FINNHUB_API_KEY). Returns "
+    "newest-first [{title, url, source, published_at, summary, image, related}].",
+    module="finnhub",
+    schema={
+        "type": "object",
+        "properties": {
+            "symbol": {"type": "string", "description": "US stock symbol, e.g. 'AAPL'"},
+            "days":   {"type": "integer", "default": 7, "description": "Trailing window in days (max 365)"},
+            "limit":  {"type": "integer", "default": 25, "description": f"Max rows (max {MAX_ROWS})"},
+        },
+        "required": ["symbol"],
+    },
+)
+async def _t_finnhub_company_news(args: dict):
+    from tckr import finnhub
+    rows = await finnhub.company_news(args["symbol"], days=int(args.get("days", 7)))
+    return _cap(rows, args.get("limit", 25))
+
+
+# ============================================================================
 # Local analytics — deterministic math over fetched candles. These tools do no
 # network of their own; they pull the daily-close cascade then call the
 # stdlib-only primitives in `tckr.analytics`. module="" → "meta" bucket (like

@@ -100,12 +100,16 @@ async def _request(
     headers: dict | None = None,
     json: Any = None,
     label: str = "",
+    as_text: bool = False,
 ) -> Any | None:
     tag = label or url
     last_exc: Exception | None = None
+    # Default Accept is JSON, but text endpoints (RSS/Atom feeds) want XML.
+    default_accept = "application/rss+xml, application/xml, text/xml" if as_text \
+        else "application/json"
     async with httpx.AsyncClient(
         timeout=settings.HTTP_TIMEOUT_S,
-        headers={"accept": "application/json"},
+        headers={"accept": default_accept},
         follow_redirects=True,
     ) as client:
         for attempt in range(settings.HTTP_MAX_RETRIES + 1):
@@ -114,7 +118,7 @@ async def _request(
                                          headers=headers, json=json)
                 if r.status_code == 200:
                     _record(tag, status=200, ok=True)
-                    return r.json()
+                    return r.text if as_text else r.json()
                 if r.status_code in _RETRY_STATUS and attempt < settings.HTTP_MAX_RETRIES:
                     await asyncio.sleep(0.5 * (attempt + 1))
                     continue
@@ -146,6 +150,17 @@ async def post_json(url: str, payload: Any, *, params: dict | None = None,
     """POST `payload` as JSON to `url`; return parsed JSON, or None on failure."""
     return await _request("POST", url, json=payload, params=params,
                           headers=headers, label=label)
+
+
+async def get_text(url: str, *, params: dict | None = None,
+                   headers: dict | None = None, label: str = "") -> str | None:
+    """GET `url`; return the raw response body as text, or None on any failure.
+
+    For non-JSON upstreams (RSS/Atom feeds, plain-text endpoints). Shares the
+    same retry, redirect-following, and per-provider health tracking as
+    `get_json`."""
+    return await _request("GET", url, params=params, headers=headers,
+                          label=label, as_text=True)
 
 
 async def aclose() -> None:

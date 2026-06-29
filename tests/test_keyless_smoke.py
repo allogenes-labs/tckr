@@ -204,3 +204,80 @@ async def test_thegraph_public_uniswap_v3():
         p = rows[0]
         assert "totalValueLockedUSD" in p
         assert "token0" in p
+
+
+async def test_cryptonews_latest_keyless():
+    """Crypto outlet RSS aggregator — keyless, merged across feeds."""
+    from tckr import cryptonews
+    rows = await cryptonews.latest(limit=5)
+    assert isinstance(rows, list)  # always a list (empty if all feeds down)
+    if not rows:
+        pytest.skip("all RSS feeds returned nothing — likely transient")
+    r = rows[0]
+    for k in ("title", "url", "source", "published_at", "published_ts",
+              "summary", "categories", "image"):
+        assert k in r, f"missing key {k!r} in cryptonews item"
+    assert r["url"].startswith("http")
+    assert r["source"] in cryptonews.FEEDS
+    # merged result must be de-duplicated by URL
+    urls = [x["url"] for x in rows]
+    assert len(urls) == len(set(urls)), "cryptonews returned duplicate URLs"
+
+
+async def test_cryptonews_single_feed():
+    from tckr import cryptonews
+    rows = await cryptonews.feed("decrypt")
+    if not rows:
+        pytest.skip("decrypt feed returned nothing — transient")
+    assert isinstance(rows, list)
+    assert all(it["source"] == "decrypt" for it in rows)
+
+
+async def test_gdelt_articles_keyless():
+    """GDELT DOC 2.0 — keyless. Tolerant of the ~1 req/5s soft-throttle, which
+    returns a text body that surfaces here as None."""
+    from tckr import gdelt
+    rows = await gdelt.articles("bitcoin", timespan="2d", max_records=5)
+    if rows is None:
+        pytest.skip("GDELT returned None — likely the 1-req/5s soft throttle")
+    assert isinstance(rows, list)
+    if rows:
+        r = rows[0]
+        for k in ("title", "url", "source", "published_at", "published_ts",
+                  "language", "source_country"):
+            assert k in r, f"missing key {k!r} in gdelt article"
+        assert r["url"].startswith("http")
+
+
+@pytest.mark.needs_keys
+async def test_finnhub_market_news():
+    """Finnhub market news — requires FINNHUB_API_KEY (free tier)."""
+    from tckr import finnhub, registry
+    if not registry.configured("finnhub"):
+        pytest.skip("FINNHUB_API_KEY not set")
+    rows = await finnhub.market_news("general")
+    if rows is None:
+        pytest.skip("upstream returned None — rate-limited or transient")
+    assert isinstance(rows, list)
+    if rows:
+        r = rows[0]
+        for k in ("title", "url", "source", "published_at", "published_ts",
+                  "summary", "category"):
+            assert k in r, f"missing key {k!r} in finnhub item"
+        assert r["url"].startswith("http")
+
+
+async def test_news_cascade_keyless():
+    """Unified cascade returns a merged, de-duped, provider-tagged list using at
+    least the keyless providers."""
+    from tckr import news
+    rows = await news.latest(limit=8)
+    assert isinstance(rows, list)
+    if not rows:
+        pytest.skip("no provider returned anything — transient")
+    providers = {r.get("provider") for r in rows}
+    assert providers <= {"cryptonews", "gdelt", "finnhub"}
+    for r in rows:
+        assert "provider" in r and r["url"].startswith("http")
+    urls = [r["url"] for r in rows]
+    assert len(urls) == len(set(urls)), "news cascade returned duplicate URLs"
