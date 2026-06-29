@@ -1785,7 +1785,8 @@ def _last(xs):
     },
 )
 async def _t_ta_risk(args: dict) -> dict:
-    from tckr import analytics as an, history
+    from tckr import analytics as an
+    from tckr import history
     sym = (args.get("symbol") or "").strip().upper()
     days = max(2, min(int(args.get("days", 180)), 365))
     data = await history.candles_one(sym, days=days)
@@ -1836,7 +1837,8 @@ async def _t_ta_risk(args: dict) -> dict:
     },
 )
 async def _t_ta_indicators(args: dict) -> dict:
-    from tckr import analytics as an, history
+    from tckr import analytics as an
+    from tckr import history
     sym = (args.get("symbol") or "").strip().upper()
     days = max(2, min(int(args.get("days", 120)), 365))
     wanted = args.get("indicators") or ["sma", "ema", "rsi", "macd", "bollinger", "zscore", "atr"]
@@ -1902,7 +1904,8 @@ async def _t_ta_indicators(args: dict) -> dict:
     },
 )
 async def _t_ta_correlation(args: dict) -> dict:
-    from tckr import analytics as an, history
+    from tckr import analytics as an
+    from tckr import history
     sym = (args.get("symbol") or "").strip().upper()
     bench = (args.get("benchmark") or "").strip().upper()
     days = max(2, min(int(args.get("days", 180)), 365))

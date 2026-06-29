@@ -114,11 +114,11 @@ def _ohlc(bars) -> tuple[list[float], list[float], list[float]] | None:
     for b in bars:
         if not isinstance(b, dict):
             return None
-        h, l, c = _f(b.get("h")), _f(b.get("l")), _f(b.get("c"))
-        if h is None or l is None or c is None or not all(map(math.isfinite, (h, l, c))):
+        h, lo, c = _f(b.get("h")), _f(b.get("l")), _f(b.get("c"))
+        if h is None or lo is None or c is None or not all(map(math.isfinite, (h, lo, c))):
             return None
         highs.append(h)
-        lows.append(l)
+        lows.append(lo)
         closes.append(c)
     return highs, lows, closes
 
@@ -132,7 +132,7 @@ def returns(series) -> list[float]:
     if s is None or len(s) < 2:
         return []
     out = []
-    for prev, cur in zip(s, s[1:]):
+    for prev, cur in zip(s, s[1:], strict=False):
         out.append(cur / prev - 1.0 if prev > 0 else float("nan"))
     return out
 
@@ -144,7 +144,7 @@ def log_returns(series) -> list[float]:
     if s is None or len(s) < 2:
         return []
     out = []
-    for prev, cur in zip(s, s[1:]):
+    for prev, cur in zip(s, s[1:], strict=False):
         out.append(math.log(cur / prev) if prev > 0 and cur > 0 else float("nan"))
     return out
 
@@ -276,7 +276,7 @@ def wma(series, period: int) -> list[float]:
     out = []
     for i in range(period, len(s) + 1):
         window = s[i - period:i]
-        out.append(sum(w * x for w, x in zip(weights, window)) / denom)
+        out.append(sum(w * x for w, x in zip(weights, window, strict=True)) / denom)
     return out
 
 
@@ -286,22 +286,22 @@ def rsi(series, period: int = 14) -> list[float]:
     s = _floats(series)
     if s is None or period < 1 or len(s) < period + 1:
         return []
-    deltas = [b - a for a, b in zip(s, s[1:])]
+    deltas = [b - a for a, b in zip(s, s[1:], strict=False)]
     gains = [d if d > 0 else 0.0 for d in deltas]
     losses = [-d if d < 0 else 0.0 for d in deltas]
     avg_gain = statistics.fmean(gains[:period])
     avg_loss = statistics.fmean(losses[:period])
 
-    def _rsi(g: float, l: float) -> float:
-        if l == 0:
+    def _rsi(g: float, loss: float) -> float:
+        if loss == 0:
             return 100.0
-        rs = g / l
+        rs = g / loss
         return 100.0 - 100.0 / (1.0 + rs)
 
     out = [_rsi(avg_gain, avg_loss)]
-    for g, l in zip(gains[period:], losses[period:]):
+    for g, loss in zip(gains[period:], losses[period:], strict=True):
         avg_gain = (avg_gain * (period - 1) + g) / period
-        avg_loss = (avg_loss * (period - 1) + l) / period
+        avg_loss = (avg_loss * (period - 1) + loss) / period
         out.append(_rsi(avg_gain, avg_loss))
     return out
 
@@ -323,7 +323,7 @@ def macd(series, *, fast: int = 12, slow: int = 26, signal: int = 9) -> dict | N
         return None
     signal_line = _ema_seq(macd_line, signal)         # aligns to macd_line[signal-1:]
     macd_tail = macd_line[signal - 1:]
-    hist = [m - sig for m, sig in zip(macd_tail, signal_line)]
+    hist = [m - sig for m, sig in zip(macd_tail, signal_line, strict=True)]
     return {"macd": macd_tail, "signal": signal_line, "hist": hist}
 
 

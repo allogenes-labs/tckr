@@ -83,7 +83,7 @@ def test_macd_hist_is_macd_minus_signal():
     m = an.macd(s)
     assert m is not None
     assert len(m["macd"]) == len(m["signal"]) == len(m["hist"])
-    for mm, sig, h in zip(m["macd"], m["signal"], m["hist"]):
+    for mm, sig, h in zip(m["macd"], m["signal"], m["hist"], strict=True):
         assert _close(h, mm - sig)
 
 
