@@ -453,7 +453,14 @@ async def _discovery(path: str, limit: int, *, label: str) -> list[dict]:
                 log.warning("pumpfun.%s: MORALIS_API_KEY not set (Bitquery doesn't cover this endpoint) — skipped",
                             path)
 
-    _cache.put(ck, rows)
+    # Cache real results. An empty result while a key IS configured is almost
+    # always a transient upstream failure (not a genuinely empty feed), so don't
+    # cache it — that would suppress discovery for the whole TTL. A no-key empty
+    # is a deterministic skip and fine to cache.
+    has_key = bool(settings.MORALIS_API_KEY
+                   or (path == "new" and settings.BITQUERY_API_KEY))
+    if rows or not has_key:
+        _cache.put(ck, rows)
     return rows
 
 

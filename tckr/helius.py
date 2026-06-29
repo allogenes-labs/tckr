@@ -147,7 +147,8 @@ async def token_holdings(address: str, *, limit: int = 100,
     result = await _rpc("getAssetsByOwner", params,
                         label=f"helius getAssetsByOwner {address[:8]}…")
     if not isinstance(result, dict):
-        _cache.put(ck, empty)
+        # RPC error — return the empty shape but DON'T cache it, so a transient
+        # failure doesn't suppress real holdings for the whole TTL.
         return empty
 
     fungibles = []

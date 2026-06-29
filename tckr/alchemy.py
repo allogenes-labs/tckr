@@ -212,7 +212,7 @@ async def transfers(
     if cached is not None:
         return cached
 
-    async def _one(filter_param: str) -> list[dict]:
+    async def _one(filter_param: str) -> list[dict] | None:
         params = [{
             filter_param: address,
             "category": cats,
@@ -223,14 +223,19 @@ async def transfers(
         result = await _rpc("alchemy_getAssetTransfers", params, network=network,
                             label=f"alchemy_getAssetTransfers {filter_param[:4]} {address[:8]}…")
         if not isinstance(result, dict):
-            return []
+            return None  # RPC error — distinct from "no transfers"
         return result.get("transfers") or []
 
     raw: list[dict] = []
+    had_error = False
     if direction in ("out", "both"):
-        raw.extend(await _one("fromAddress"))
+        r = await _one("fromAddress")
+        had_error = had_error or r is None
+        raw.extend(r or [])
     if direction in ("in", "both"):
-        raw.extend(await _one("toAddress"))
+        r = await _one("toAddress")
+        had_error = had_error or r is None
+        raw.extend(r or [])
 
     seen: set[str] = set()
     parsed: list[dict] = []
@@ -254,5 +259,8 @@ async def transfers(
         })
     parsed.sort(key=lambda r: r.get("block_number") or 0, reverse=True)
     out = parsed[:limit]
-    _cache.put(ck, out)
+    # Don't cache a result built from a failed RPC leg — a transient error must
+    # not pin an empty/partial list for the whole TTL.
+    if not had_error:
+        _cache.put(ck, out)
     return out

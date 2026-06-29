@@ -239,7 +239,10 @@ async def funding_history(symbol: str, *, interval: str = "1hour",
     if not sym:
         return []
     hours = max(1, min(int(hours), 24 * 30))
-    to_ts = _now_unix()
+    # Quantize the window end to the cache TTL so repeated calls in the same
+    # window share a key — a raw _now_unix() made every call a cache miss.
+    _ttl = max(1, settings.PERPS_TTL_S)
+    to_ts = (_now_unix() // _ttl) * _ttl
     from_ts = to_ts - hours * 3600
     body = await _get(
         "funding-rate-history",
@@ -312,7 +315,10 @@ async def liquidations(symbols: str | list[str], *, interval: str = "1hour",
     if not syms:
         return []
     hours = max(1, min(int(hours), 24 * 30))
-    to_ts = _now_unix()
+    # Quantize the window end to the cache TTL so repeated calls in the same
+    # window share a key — a raw _now_unix() made every call a cache miss.
+    _ttl = max(1, settings.LIQUIDATION_TTL_S)
+    to_ts = (_now_unix() // _ttl) * _ttl
     from_ts = to_ts - hours * 3600
     body = await _get(
         "liquidation-history",

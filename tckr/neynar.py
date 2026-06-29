@@ -89,8 +89,11 @@ async def _get(path: str, *, params: dict | None = None,
         log.warning("NEYNAR_API_KEY not set — neynar.%s skipped", label or path)
         return None
     headers = {"x-api-key": settings.NEYNAR_API_KEY, "accept": "application/json"}
+    # Always prefix the health label with the provider name so tckr.health()
+    # buckets every neynar call under one "neynar" key (the first label token is
+    # the bucket); callers pass operation-only labels like "search_casts q=…".
     return await _http.get_json(f"{_BASE}{path}", params=params, headers=headers,
-                                label=label or f"neynar {path}")
+                                label=f"neynar {label}" if label else f"neynar {path}")
 
 
 # ---------- normalized parsers ----------
@@ -210,7 +213,8 @@ async def search_casts(q: str, *, channel_id: str | None = None,
     if isinstance(body, dict):
         casts = ((body.get("result") or {}).get("casts") or [])
         rows = [_parse_cast(c) for c in casts if isinstance(c, dict)]
-    _cache.put(ck, rows)
+    if body is not None:  # don't cache a result derived from a failed fetch
+        _cache.put(ck, rows)
     return rows
 
 
@@ -240,7 +244,8 @@ async def channel_feed(channel_ids: str | list[str], *,
     if isinstance(body, dict):
         casts = body.get("casts") or []
         rows = [_parse_cast(c) for c in casts if isinstance(c, dict)]
-    _cache.put(ck, rows)
+    if body is not None:  # don't cache a result derived from a failed fetch
+        _cache.put(ck, rows)
     return rows
 
 
@@ -262,7 +267,8 @@ async def trending_casts(*, channel_id: str | None = None,
     if isinstance(body, dict):
         casts = body.get("casts") or []
         rows = [_parse_cast(c) for c in casts if isinstance(c, dict)]
-    _cache.put(ck, rows)
+    if body is not None:  # don't cache a result derived from a failed fetch
+        _cache.put(ck, rows)
     return rows
 
 
@@ -294,7 +300,8 @@ async def trending_fungibles(*, limit: int = 20,
         items = (body.get("fungibles") or body.get("tokens")
                   or body.get("trending") or [])
         rows = [_parse_token(t) for t in items if isinstance(t, dict)]
-    _cache.put(ck, rows)
+    if body is not None:  # don't cache a result derived from a failed fetch
+        _cache.put(ck, rows)
     return rows
 
 
@@ -322,7 +329,8 @@ async def token_metadata(token_address: str, *,
                 out = _parse_token(inner)
         elif isinstance(fung, list) and fung:
             out = _parse_token(fung[0])
-    _cache.put(ck, out)
+    if body is not None:  # don't cache a result derived from a failed fetch
+        _cache.put(ck, out)
     return out
 
 
@@ -348,7 +356,8 @@ async def user_by_username(username: str) -> dict | None:
     out: dict | None = None
     if isinstance(body, dict):
         out = _parse_user(body.get("user"))
-    _cache.put(ck, out)
+    if body is not None:  # don't cache a result derived from a failed fetch
+        _cache.put(ck, out)
     return out
 
 
@@ -376,7 +385,8 @@ async def user_popular_casts(fid: int, *, limit: int = 10) -> list[dict]:
     if isinstance(body, dict):
         casts = body.get("casts") or []
         rows = [_parse_cast(c) for c in casts if isinstance(c, dict)]
-    _cache.put(ck, rows)
+    if body is not None:  # don't cache a result derived from a failed fetch
+        _cache.put(ck, rows)
     return rows
 
 
@@ -412,5 +422,6 @@ async def user_balance(fid: int) -> list[dict] | None:
             row["balance"] = _f(it.get("balance") or it.get("amount"))
             row["balance_usd"] = _f(it.get("balance_usd") or it.get("value_usd"))
             rows.append(row)
-    _cache.put(ck, rows)
+    if body is not None:  # don't cache a result derived from a failed fetch
+        _cache.put(ck, rows)
     return rows

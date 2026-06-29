@@ -362,13 +362,21 @@ async def candles(
         log.warning("hyperliquid candles: unsupported interval %r", interval)
         return None
     ms_per = _INTERVAL_MS[interval]
+    caller_pinned = start_ms is not None or end_ms is not None
     if end_ms is None:
         end_ms = _now_ms()
     if start_ms is None:
         # +1 buffer candle so we don't drop the most recent one on partial bar.
         start_ms = end_ms - (max(1, int(limit)) + 1) * ms_per
 
-    ck = ("candles", sym, interval, int(start_ms), int(end_ms))
+    # Cache key: when the caller pinned explicit bounds, key on them. Otherwise
+    # key on (symbol, interval, limit) + a coarse time bucket = the TTL window —
+    # baking the raw _now_ms() end into the key made every call a cache miss.
+    if caller_pinned:
+        ck = ("candles", sym, interval, int(start_ms), int(end_ms))
+    else:
+        bucket = int(end_ms) // (max(1, settings.PERPS_TTL_S) * 1000)
+        ck = ("candles", sym, interval, int(limit), bucket)
     cached = _cache.get(ck, settings.PERPS_TTL_S)
     if cached is not None:
         return cached
