@@ -197,25 +197,42 @@ def _shape_market(m: dict) -> dict:
             clob_token_ids = json.loads(clob_token_ids)
         except Exception:
             clob_token_ids = None
-    # YES price = the first outcome's price by convention; NO is the second.
-    yes_price = None
-    no_price = None
-    if isinstance(outcome_prices, list) and outcome_prices:
-        try:
-            yes_price = float(outcome_prices[0])
-        except (TypeError, ValueError):
-            yes_price = None
-        if len(outcome_prices) > 1:
+    # Map YES/NO by the `outcomes` labels rather than assuming index 0=YES,1=NO —
+    # Polymarket doesn't guarantee that order, and multi-outcome markets (e.g.
+    # ["Trump","Biden"]) have no YES/NO at all. Fall back to 0/1 only for an
+    # unlabeled 2-outcome market (or when outcomes couldn't be parsed), preserving
+    # prior behavior for the common binary case.
+    yes_idx: int | None = None
+    no_idx: int | None = None
+    if isinstance(outcomes, list):
+        for i, o in enumerate(outcomes):
+            lab = str(o).strip().lower()
+            if lab in ("yes", "true") and yes_idx is None:
+                yes_idx = i
+            elif lab in ("no", "false") and no_idx is None:
+                no_idx = i
+        if yes_idx is None and no_idx is None and len(outcomes) == 2:
+            yes_idx, no_idx = 0, 1
+    else:
+        yes_idx, no_idx = 0, 1  # outcomes unavailable — legacy assumption
+
+    def _price_at(idx: int | None) -> float | None:
+        if idx is not None and isinstance(outcome_prices, list) and idx < len(outcome_prices):
             try:
-                no_price = float(outcome_prices[1])
+                return float(outcome_prices[idx])
             except (TypeError, ValueError):
-                no_price = None
-    yes_token_id = None
-    no_token_id = None
-    if isinstance(clob_token_ids, list) and clob_token_ids:
-        yes_token_id = str(clob_token_ids[0]) if clob_token_ids[0] else None
-        if len(clob_token_ids) > 1:
-            no_token_id = str(clob_token_ids[1]) if clob_token_ids[1] else None
+                return None
+        return None
+
+    def _token_at(idx: int | None) -> str | None:
+        if idx is not None and isinstance(clob_token_ids, list) and idx < len(clob_token_ids):
+            return str(clob_token_ids[idx]) if clob_token_ids[idx] else None
+        return None
+
+    yes_price = _price_at(yes_idx)
+    no_price = _price_at(no_idx)
+    yes_token_id = _token_at(yes_idx)
+    no_token_id = _token_at(no_idx)
     return {
         "id":            m.get("id"),
         "condition_id":  m.get("conditionId"),

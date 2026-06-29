@@ -414,11 +414,17 @@ async def wallet_transactions(addresses: str | list[str], *,
         if not addr:
             continue
         c = chain if chain in ("solana", "base") else detect_chain(addr)
-        if c == "solana":
-            transfers = await _solana_transfers(addr, lookback_days=lookback_days)
-        elif c == "base":
-            transfers = await _base_transfers(addr, lookback_days=lookback_days)
-        else:
+        # Isolate each address: an unexpected error in one wallet's fetch must
+        # not abort the whole batch (the module promises per-chain degradation).
+        try:
+            if c == "solana":
+                transfers = await _solana_transfers(addr, lookback_days=lookback_days)
+            elif c == "base":
+                transfers = await _base_transfers(addr, lookback_days=lookback_days)
+            else:
+                transfers = []
+        except Exception as e:  # noqa: BLE001 — one bad wallet/chain shouldn't kill the batch
+            log.warning("wallet_pnl: transfers failed for %s on %s: %s", addr[:8], c, e)
             transfers = []
         out[addr] = transfers
     return out

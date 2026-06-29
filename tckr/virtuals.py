@@ -206,13 +206,19 @@ async def recently_graduated(limit: int = 20, *, chain: str = "base") -> list[di
     cached = _cache.get(ck, settings.LAUNCHPAD_DISCOVERY_TTL_S)
     if cached is not None:
         return cached
+    # Virtuals' API may silently ignore Strapi filters[] params (see
+    # about_to_graduate), so fetch a wide window and filter client-side rather
+    # than trusting the server to return only graduated rows.
     params = _strapi_params(
-        page_size=capped, sort="lpCreatedAt:desc", chain=chain,
+        page_size=100, sort="lpCreatedAt:desc", chain=chain,
         extra_filters={"filters[lpAddress][$notNull]": "true"},
     )
     rows = await _get(params, label=f"virtuals recently_graduated ({chain})")
-    _cache.put(ck, rows)
-    return rows
+    grads = [r for r in rows if r.get("is_graduated")]
+    grads.sort(key=lambda r: r.get("lp_created_at_iso") or "", reverse=True)
+    out = grads[:capped]
+    _cache.put(ck, out)
+    return out
 
 
 async def genesis_launches(limit: int = 20, *, chain: str = "base") -> list[dict]:
@@ -223,13 +229,17 @@ async def genesis_launches(limit: int = 20, *, chain: str = "base") -> list[dict
     cached = _cache.get(ck, settings.LAUNCHPAD_DISCOVERY_TTL_S)
     if cached is not None:
         return cached
+    # Filter client-side — the server-side genesis filter may be ignored.
     params = _strapi_params(
-        page_size=capped, sort="createdAt:desc", chain=chain,
+        page_size=100, sort="createdAt:desc", chain=chain,
         extra_filters={"filters[genesis][$notNull]": "true"},
     )
     rows = await _get(params, label=f"virtuals genesis ({chain})")
-    _cache.put(ck, rows)
-    return rows
+    gen = [r for r in rows if r.get("is_genesis")]
+    gen.sort(key=lambda r: r.get("created_at_iso") or "", reverse=True)
+    out = gen[:capped]
+    _cache.put(ck, out)
+    return out
 
 
 async def token_info(token_address: str, *, chain: str = "base") -> dict | None:

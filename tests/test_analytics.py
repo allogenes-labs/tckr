@@ -87,6 +87,31 @@ def test_macd_hist_is_macd_minus_signal():
         assert _close(h, mm - sig)
 
 
+def test_correlation_self_is_one():
+    from tckr import analytics as an
+    s = [1.0, 1.1, 1.05, 1.2, 1.15, 1.3, 1.25]
+    assert _close(an.correlation(s, s), 1.0)
+
+
+def test_correlation_aligns_unequal_length_from_recent_end():
+    """A longer benchmark must align to the asset's recent window, not misalign.
+    Correlating a series with a suffix of itself should be ~1.0."""
+    from tckr import analytics as an
+    a = [10.0, 11.0, 10.5, 12.0, 11.5, 13.0]
+    b = [1.0, 2.0, 3.0] + a  # same recent tail, extra older history
+    assert _close(an.correlation(a, b), 1.0)
+
+
+def test_correlation_skips_nonfinite_period_in_both_series():
+    """A zero price (→ nan return) in one series drops that period from BOTH,
+    keeping the vectors index-locked rather than shifting one."""
+    from tckr import analytics as an
+    a = [1.0, 2.0, 0.0, 2.0, 3.0, 4.0]   # the 0.0 makes one return non-finite
+    b = [2.0, 4.0, 6.0, 8.0, 10.0, 12.0]
+    c = an.correlation(a, b)
+    assert c is None or -1.0 <= c <= 1.0  # must not raise / must stay valid
+
+
 def test_bollinger_mid_is_sma_and_constant_collapses():
     s = [10.0] * 25
     b = an.bollinger(s, 20, 2.0)

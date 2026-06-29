@@ -381,9 +381,24 @@ async def funding_aggregate(base: str) -> dict | None:
     rates = await funding_rate(perp_syms)
     if not rates:
         return None
-    aprs = [r["funding_apr_pct"] for r in rates if r.get("funding_apr_pct") is not None]
-    if not aprs:
+    # Group by exchange: a single venue lists several quote markets (Binance has
+    # BTCUSDT + BTCUSD + BTCUSDC perps), so counting raw markets as "exchanges"
+    # inflates n_exchanges and skews the mean/median/top-share toward multi-quote
+    # venues. Per exchange, the median funding APR of its markets is the
+    # representative rate.
+    by_ex: dict[str, list[float]] = {}
+    rows_by_ex: dict[str, list[dict]] = {}
+    for r in rates:
+        apr = r.get("funding_apr_pct")
+        code = r.get("exchange_code")
+        if apr is None or not code:
+            continue
+        by_ex.setdefault(code, []).append(apr)
+        rows_by_ex.setdefault(code, []).append(r)
+    if not by_ex:
         return None
+    ex_apr = {code: statistics.median(v) for code, v in by_ex.items()}
+    aprs = list(ex_apr.values())
     agg = {
         "min_apr_pct": min(aprs),
         "max_apr_pct": max(aprs),
@@ -391,15 +406,19 @@ async def funding_aggregate(base: str) -> dict | None:
         "mean_apr_pct": sum(aprs) / len(aprs),
         "spread_apr_pct": max(aprs) - min(aprs),
         "n_exchanges": len(aprs),
+        "n_markets": sum(len(v) for v in by_ex.values()),
         "ts": _now_iso(),
     }
-    # Sort per-exchange most-positive-first for human readability.
-    rates_sorted = sorted(
-        rates,
-        key=lambda r: (r.get("funding_apr_pct") if r.get("funding_apr_pct") is not None else 0),
-        reverse=True,
+    # One row per exchange (representative APR + its underlying markets),
+    # most-positive-first for readability.
+    per_exchange = sorted(
+        ({"exchange_code": code,
+          "exchange_name": _exchange_name(code),
+          "funding_apr_pct": ex_apr[code],
+          "markets": rows_by_ex[code]} for code in ex_apr),
+        key=lambda e: e["funding_apr_pct"], reverse=True,
     )
-    out = {"base": target, "per_exchange": rates_sorted, "aggregate": agg}
+    out = {"base": target, "per_exchange": per_exchange, "aggregate": agg}
     _cache.put(ck, out)
     return out
 
@@ -423,18 +442,36 @@ async def open_interest_aggregate(base: str) -> dict | None:
     ois = await open_interest(perp_syms)
     if not ois:
         return None
-    vals = [r["open_interest_usd"] for r in ois if r.get("open_interest_usd") is not None]
-    if not vals:
+    # Group by exchange and SUM OI per venue (OI is additive across a venue's
+    # quote markets), so n_exchanges and top_exchange_share reflect real
+    # exchanges — not individual markets (Binance's 3 BTC perps are one venue).
+    by_ex: dict[str, float] = {}
+    rows_by_ex: dict[str, list[dict]] = {}
+    for r in ois:
+        v = r.get("open_interest_usd")
+        code = r.get("exchange_code")
+        if v is None or not code:
+            continue
+        by_ex[code] = by_ex.get(code, 0.0) + v
+        rows_by_ex.setdefault(code, []).append(r)
+    if not by_ex:
         return None
-    total = sum(vals)
+    total = sum(by_ex.values())
     agg = {
         "total_open_interest_usd": total,
-        "n_exchanges": len(vals),
-        "top_exchange_share_pct": (max(vals) / total * 100.0) if total > 0 else None,
+        "n_exchanges": len(by_ex),
+        "n_markets": sum(len(v) for v in rows_by_ex.values()),
+        "top_exchange_share_pct": (max(by_ex.values()) / total * 100.0) if total > 0 else None,
         "ts": _now_iso(),
     }
-    ois_sorted = sorted(ois, key=lambda r: r.get("open_interest_usd") or 0, reverse=True)
-    out = {"base": target, "per_exchange": ois_sorted, "aggregate": agg}
+    per_exchange = sorted(
+        ({"exchange_code": code,
+          "exchange_name": _exchange_name(code),
+          "open_interest_usd": by_ex[code],
+          "markets": rows_by_ex[code]} for code in by_ex),
+        key=lambda e: e["open_interest_usd"], reverse=True,
+    )
+    out = {"base": target, "per_exchange": per_exchange, "aggregate": agg}
     _cache.put(ck, out)
     return out
 

@@ -56,12 +56,12 @@ async def _get(path: str, params: dict | None = None,
         if not isinstance(data, dict):
             return None
         # LunarCrush wraps payload in {data: [...]} for list endpoints, {data: {...}}
-        # for single-item. Unwrap for callers but pass through full dict if no
-        # .data — without caching it, since a data-less body is usually an
-        # error envelope (e.g. a 200-OK rate-limit response) that would
-        # otherwise poison the cache for the whole TTL.
+        # for single-item. A body with no `data` key is the 200-OK error/rate-limit
+        # envelope — return None (unknown) so single-item callers like coin()/topic()
+        # degrade gracefully instead of handing back the error envelope as data. Not
+        # cached, so a transient throttle doesn't poison the TTL.
         if "data" not in data:
-            return data
+            return None
         result = data["data"]
         _cache.put(key, result)
         return result

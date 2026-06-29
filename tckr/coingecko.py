@@ -217,18 +217,22 @@ async def categories(*, order: str = "market_cap_desc") -> list[dict] | None:
 
 
 async def coin_id_from_symbol(symbol: str) -> str | None:
-    """Convenience: best-effort map from a ticker symbol (e.g. 'BTC') to a
-    CoinGecko id (e.g. 'bitcoin'). Returns the highest-mcap match, or None."""
+    """Convenience: map a ticker symbol (e.g. 'BTC') to a CoinGecko id (e.g.
+    'bitcoin'). Returns the id of the first exact-symbol match (CoinGecko orders
+    results roughly by relevance/rank), or None if no symbol matches.
+
+    Deliberately does NOT fall back to a name-only relevance hit: callers
+    (quotes/history) tag results source="coingecko", so resolving an unknown
+    ticker to an unrelated coin would surface a wrong price as if it were real.
+    """
     s = (symbol or "").strip().lower()
     if not s:
         return None
     hits = await search(s)
     if not hits or not hits.get("coins"):
         return None
-    # CoinGecko returns matches in roughly relevance order; symbol-exact matches
-    # first. The first row whose symbol matches exactly is the best bet.
     for c in hits["coins"]:
         if (c.get("symbol") or "").lower() == s:
             return c.get("id")
-    # Fallback: the highest-ranked match overall.
-    return hits["coins"][0].get("id")
+    # No exact symbol match → unresolved (absent rather than wrong).
+    return None

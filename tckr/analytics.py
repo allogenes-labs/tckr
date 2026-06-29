@@ -395,13 +395,31 @@ def percentile_rank(series, value: float) -> float | None:
 
 
 def _pair_returns(a, b) -> tuple[list[float], list[float]] | None:
-    """Periodic returns of two price series, aligned from the most-recent end."""
-    ra = _finite(returns(a))
-    rb = _finite(returns(b))
-    n = min(len(ra), len(rb))
-    if n < 2:
+    """Index-aligned periodic returns of two price series.
+
+    Trims the two price series to a common length from the most-recent end,
+    computes returns together, then drops a period only when *either* series is
+    non-finite there — so the two return vectors stay index-locked (a hole in one
+    series can't silently shift it relative to the other, which would corrupt
+    correlation / beta)."""
+    sa = _floats(a)
+    sb = _floats(b)
+    if sa is None or sb is None:
         return None
-    return ra[-n:], rb[-n:]
+    n = min(len(sa), len(sb))
+    if n < 3:  # need >= 3 aligned prices for >= 2 aligned returns
+        return None
+    ra = returns(sa[-n:])
+    rb = returns(sb[-n:])
+    pa: list[float] = []
+    pb: list[float] = []
+    for x, y in zip(ra, rb, strict=True):
+        if math.isfinite(x) and math.isfinite(y):
+            pa.append(x)
+            pb.append(y)
+    if len(pa) < 2:
+        return None
+    return pa, pb
 
 
 def correlation(series_a, series_b) -> float | None:

@@ -55,15 +55,21 @@ CHAIN_IDS: dict[str | int, int] = {
 }
 
 
-def _resolve_chain(chain: str | int) -> int:
+def _resolve_chain(chain: str | int) -> int | None:
+    """Map a chain name/id to its numeric chainid, or None if unknown.
+
+    Returns None (rather than raising) so an unsupported/typo'd chain degrades
+    gracefully like every other tckr fetch — `_get` no-ops on an unresolved
+    chainid."""
     key = chain.lower() if isinstance(chain, str) else chain
     if key in CHAIN_IDS:
         return CHAIN_IDS[key]
     # Numeric string fallback
     try:
         return int(chain)  # type: ignore[arg-type]
-    except (TypeError, ValueError) as e:
-        raise ValueError(f"unknown chain: {chain!r}") from e
+    except (TypeError, ValueError):
+        log.warning("etherscan: unknown chain %r — skipping", chain)
+        return None
 
 
 def _api_key() -> str | None:
@@ -77,6 +83,12 @@ async def _get(params: dict, ttl_s: float | None = None,
     if not key:
         log.warning("ETHERSCAN_API_KEY (or BASESCAN_API_KEY fallback) not set "
                     "— etherscan.%s skipped", label or params.get("action"))
+        return None
+    # An unresolved chain (_resolve_chain returned None) must no-op, not query
+    # with chainid=None — graceful degradation over a raised error.
+    if "chainid" in params and params["chainid"] is None:
+        log.warning("etherscan.%s: unresolved chain — skipped",
+                    label or params.get("action"))
         return None
     full = dict(params)
     full["apikey"] = key
