@@ -231,63 +231,62 @@ async def option_chain(
 
     ck = ("chain", sym, expiration, exp_gte, exp_lte, typ,
           strike_gte, strike_lte, fd, limit, max_pages)
-    cached = _cache.get(ck, settings.OPTIONS_TTL_S)
-    if cached is not None:
-        return cached
 
-    params: dict = {"feed": fd, "limit": limit}
-    if expiration:
-        params["expiration_date"] = expiration
-    if exp_gte:
-        params["expiration_date_gte"] = exp_gte
-    if exp_lte:
-        params["expiration_date_lte"] = exp_lte
-    if typ in ("call", "put"):
-        params["type"] = typ
-    if strike_gte is not None:
-        params["strike_price_gte"] = strike_gte
-    if strike_lte is not None:
-        params["strike_price_lte"] = strike_lte
+    async def _fetch() -> dict | None:
+        params: dict = {"feed": fd, "limit": limit}
+        if expiration:
+            params["expiration_date"] = expiration
+        if exp_gte:
+            params["expiration_date_gte"] = exp_gte
+        if exp_lte:
+            params["expiration_date_lte"] = exp_lte
+        if typ in ("call", "put"):
+            params["type"] = typ
+        if strike_gte is not None:
+            params["strike_price_gte"] = strike_gte
+        if strike_lte is not None:
+            params["strike_price_lte"] = strike_lte
 
-    contracts: list[dict] = []
-    page_token: str | None = None
-    truncated = False
-    for page in range(max_pages):
-        if page_token:
-            params["page_token"] = page_token
-        body = await _http.get_json(
-            f"{_BASE}/snapshots/{sym}",
-            params=params,
-            headers=headers,
-            label=f"alpaca options snapshots {sym}",
-        )
-        if not isinstance(body, dict):
-            # First-page failure → None; later-page failure → return what we have.
-            if page == 0:
-                return None
-            break
-        snaps = body.get("snapshots") or {}
-        for occ_sym, snap in snaps.items():
-            if isinstance(snap, dict):
-                contracts.append(_parse_contract(occ_sym, snap))
-        page_token = body.get("next_page_token")
-        if not page_token:
-            break
-        if page == max_pages - 1:
-            truncated = True
+        contracts: list[dict] = []
+        page_token: str | None = None
+        truncated = False
+        for page in range(max_pages):
+            if page_token:
+                params["page_token"] = page_token
+            body = await _http.get_json(
+                f"{_BASE}/snapshots/{sym}",
+                params=params,
+                headers=headers,
+                label=f"alpaca options snapshots {sym}",
+            )
+            if not isinstance(body, dict):
+                # First-page failure → None; later-page → return what we have.
+                if page == 0:
+                    return None
+                break
+            snaps = body.get("snapshots") or {}
+            for occ_sym, snap in snaps.items():
+                if isinstance(snap, dict):
+                    contracts.append(_parse_contract(occ_sym, snap))
+            page_token = body.get("next_page_token")
+            if not page_token:
+                break
+            if page == max_pages - 1:
+                truncated = True
 
-    contracts.sort(key=_sort_key)
-    out = {
-        "underlying": sym,
-        "feed": fd,
-        "count": len(contracts),
-        "ts": _now_iso(),
-        "contracts": contracts,
-    }
-    if truncated:
-        out["truncated"] = True
-    _cache.put(ck, out)
-    return out
+        contracts.sort(key=_sort_key)
+        out = {
+            "underlying": sym,
+            "feed": fd,
+            "count": len(contracts),
+            "ts": _now_iso(),
+            "contracts": contracts,
+        }
+        if truncated:
+            out["truncated"] = True
+        return out
+
+    return await _cache.cached(ck, settings.OPTIONS_TTL_S, _fetch)
 
 
 # --------------------------- single / explicit contracts ---------------------------
@@ -313,24 +312,23 @@ async def option_snapshot(symbols: str | list[str], *,
     fd = _feed(feed)
     joined = ",".join(sorted(wanted))
     ck = ("snapshot", joined, fd)
-    cached = _cache.get(ck, settings.OPTIONS_TTL_S)
-    if cached is not None:
-        return cached
 
-    body = await _http.get_json(
-        f"{_BASE}/snapshots",
-        params={"symbols": joined, "feed": fd},
-        headers=headers,
-        label=f"alpaca options snapshot {wanted[0]}{'+' if len(wanted) > 1 else ''}",
-    )
-    if not isinstance(body, dict):
-        return []
-    snaps = body.get("snapshots") or {}
-    rows = [_parse_contract(s, snap) for s, snap in snaps.items()
-            if isinstance(snap, dict)]
-    rows.sort(key=_sort_key)
-    _cache.put(ck, rows)
-    return rows
+    async def _fetch() -> list[dict] | None:
+        body = await _http.get_json(
+            f"{_BASE}/snapshots",
+            params={"symbols": joined, "feed": fd},
+            headers=headers,
+            label=f"alpaca options snapshot {wanted[0]}{'+' if len(wanted) > 1 else ''}",
+        )
+        if not isinstance(body, dict):
+            return None  # failure — not cached
+        snaps = body.get("snapshots") or {}
+        rows = [_parse_contract(s, snap) for s, snap in snaps.items()
+                if isinstance(snap, dict)]
+        rows.sort(key=_sort_key)
+        return rows
+
+    return await _cache.cached(ck, settings.OPTIONS_TTL_S, _fetch) or []
 
 
 # --------------------------- expirations ---------------------------
@@ -354,26 +352,25 @@ async def expirations(underlying: str, *, feed: str | None = None,
         return None
     fd = _feed(feed)
     ck = ("expirations", sym, fd)
-    cached = _cache.get(ck, settings.OPTIONS_EXPIRATIONS_TTL_S)
-    if cached is not None:
-        return cached
 
-    chain = await option_chain(sym, type="call", feed=fd,
-                               limit=1000, max_pages=max(1, int(max_pages)))
-    if chain is None:
-        return None
-    exps = sorted({c["expiration"] for c in chain["contracts"] if c.get("expiration")})
-    strikes = [c["strike"] for c in chain["contracts"] if c.get("strike") is not None]
-    out = {
-        "underlying": sym,
-        "expirations": exps,
-        "strikes": {"min": min(strikes), "max": max(strikes)} if strikes else None,
-        "ts": _now_iso(),
-    }
-    if chain.get("truncated"):
-        out["truncated"] = True
-    _cache.put(ck, out)
-    return out
+    async def _fetch() -> dict | None:
+        chain = await option_chain(sym, type="call", feed=fd,
+                                   limit=1000, max_pages=max(1, int(max_pages)))
+        if chain is None:
+            return None
+        exps = sorted({c["expiration"] for c in chain["contracts"] if c.get("expiration")})
+        strikes = [c["strike"] for c in chain["contracts"] if c.get("strike") is not None]
+        out = {
+            "underlying": sym,
+            "expirations": exps,
+            "strikes": {"min": min(strikes), "max": max(strikes)} if strikes else None,
+            "ts": _now_iso(),
+        }
+        if chain.get("truncated"):
+            out["truncated"] = True
+        return out
+
+    return await _cache.cached(ck, settings.OPTIONS_EXPIRATIONS_TTL_S, _fetch)
 
 
 # --------------------------- Alpaca → CBOE cascade ---------------------------

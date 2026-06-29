@@ -128,8 +128,8 @@ async def _pool_list(kind: str, network: str, page: int,
                      limit: int | None) -> list[dict]:
     net = settings.normalize_network(network) or settings.NETWORK_BASE
     ck = (kind, net, page)
-    pools = _cache.get(ck, settings.DEX_TTL_S)
-    if pools is None:
+
+    async def _fetch() -> list[dict] | None:
         body = await _http.get_json(
             f"{_BASE}/networks/{net}/{kind}",
             params={"page": page, "include": "base_token,quote_token,dex"},
@@ -137,10 +137,11 @@ async def _pool_list(kind: str, network: str, page: int,
             label=f"geckoterminal {kind} {net}",
         )
         if not body or "data" not in body:
-            return []
+            return None  # failure — not cached
         inc = _index_included(body.get("included"))
-        pools = [_parse_pool(p, inc) for p in body.get("data") or []]
-        _cache.put(ck, pools)
+        return [_parse_pool(p, inc) for p in body.get("data") or []]
+
+    pools = await _cache.cached(ck, settings.DEX_TTL_S, _fetch) or []
     return pools[:limit] if limit else pools
 
 
@@ -171,20 +172,17 @@ async def token_info(network: str, address: str) -> dict | None:
     if not address:
         return None
     ck = ("token", net, address.lower())
-    cached = _cache.get(ck, settings.DEX_TTL_S)
-    if cached is not None:
-        return cached
-    body = await _http.get_json(
-        f"{_BASE}/networks/{net}/tokens/{address}",
-        headers=_HEADERS,
-        label=f"geckoterminal token {net}/{address}",
-    )
-    data = (body or {}).get("data")
-    if not data:
-        return None
-    tok = _parse_token(data)
-    _cache.put(ck, tok)
-    return tok
+
+    async def _fetch() -> dict | None:
+        body = await _http.get_json(
+            f"{_BASE}/networks/{net}/tokens/{address}",
+            headers=_HEADERS,
+            label=f"geckoterminal token {net}/{address}",
+        )
+        data = (body or {}).get("data")
+        return _parse_token(data) if data else None
+
+    return await _cache.cached(ck, settings.DEX_TTL_S, _fetch)
 
 
 # --------------------------- OHLCV ---------------------------
@@ -213,41 +211,37 @@ async def pool_ohlcv(
         return None
 
     ck = ("ohlcv", net, pool_address.lower(), timeframe, aggregate, limit, currency)
-    cached = _cache.get(ck, settings.DEX_OHLCV_TTL_S)
-    if cached is not None:
-        return cached
 
-    body = await _http.get_json(
-        f"{_BASE}/networks/{net}/pools/{pool_address}/ohlcv/{timeframe}",
-        params={"aggregate": aggregate, "limit": limit, "currency": currency},
-        headers=_HEADERS,
-        label=f"geckoterminal ohlcv {net}/{pool_address}",
-    )
-    if not body:
-        return None
+    async def _fetch() -> dict | None:
+        body = await _http.get_json(
+            f"{_BASE}/networks/{net}/pools/{pool_address}/ohlcv/{timeframe}",
+            params={"aggregate": aggregate, "limit": limit, "currency": currency},
+            headers=_HEADERS,
+            label=f"geckoterminal ohlcv {net}/{pool_address}",
+        )
+        if not body:
+            return None
+        attrs = ((body.get("data") or {}).get("attributes")) or {}
+        candles: list[dict] = []
+        for row in attrs.get("ohlcv_list") or []:
+            if not row or len(row) < 6:
+                continue
+            ts, o, hi, lo, c, v = row[:6]
+            try:
+                t_iso = datetime.fromtimestamp(int(ts), tz=UTC).isoformat()
+            except (TypeError, ValueError, OSError):
+                continue
+            candles.append({"t": t_iso, "o": _f(o), "h": _f(hi),
+                            "l": _f(lo), "c": _f(c), "v": _f(v)})
+        candles.sort(key=lambda x: x["t"])  # GT newest-first → chronological
+        meta = body.get("meta") or {}
+        return {
+            "network": net,
+            "pool_address": pool_address,
+            "timeframe": timeframe,
+            "base": meta.get("base"),
+            "quote": meta.get("quote"),
+            "candles": candles,
+        }
 
-    attrs = ((body.get("data") or {}).get("attributes")) or {}
-    candles: list[dict] = []
-    for row in attrs.get("ohlcv_list") or []:
-        if not row or len(row) < 6:
-            continue
-        ts, o, hi, lo, c, v = row[:6]
-        try:
-            t_iso = datetime.fromtimestamp(int(ts), tz=UTC).isoformat()
-        except (TypeError, ValueError, OSError):
-            continue
-        candles.append({"t": t_iso, "o": _f(o), "h": _f(hi),
-                         "l": _f(lo), "c": _f(c), "v": _f(v)})
-    candles.sort(key=lambda x: x["t"])  # GT returns newest-first; make chronological
-
-    meta = body.get("meta") or {}
-    out = {
-        "network": net,
-        "pool_address": pool_address,
-        "timeframe": timeframe,
-        "base": meta.get("base"),
-        "quote": meta.get("quote"),
-        "candles": candles,
-    }
-    _cache.put(ck, out)
-    return out
+    return await _cache.cached(ck, settings.DEX_OHLCV_TTL_S, _fetch)

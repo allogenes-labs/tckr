@@ -197,25 +197,21 @@ async def search_casts(q: str, *, channel_id: str | None = None,
         return []
     capped = max(1, min(int(limit), 100))
     ck = ("search_casts", q, channel_id or "", author_fid or 0, mode, capped)
-    cached = _cache.get(ck, settings.NEYNAR_FEED_TTL_S)
-    if cached is not None:
-        return cached
 
-    params: dict = {"q": q, "limit": capped, "mode": mode}
-    if channel_id:
-        params["channel_id"] = channel_id
-    if author_fid:
-        params["author_fid"] = int(author_fid)
-
-    body = await _get("/v2/farcaster/cast/search/", params=params,
-                      label=f"search_casts q={q[:30]}")
-    rows: list[dict] = []
-    if isinstance(body, dict):
+    async def _fetch() -> list[dict] | None:
+        params: dict = {"q": q, "limit": capped, "mode": mode}
+        if channel_id:
+            params["channel_id"] = channel_id
+        if author_fid:
+            params["author_fid"] = int(author_fid)
+        body = await _get("/v2/farcaster/cast/search/", params=params,
+                          label=f"search_casts q={q[:30]}")
+        if not isinstance(body, dict):
+            return None  # failure — not cached
         casts = ((body.get("result") or {}).get("casts") or [])
-        rows = [_parse_cast(c) for c in casts if isinstance(c, dict)]
-    if body is not None:  # don't cache a result derived from a failed fetch
-        _cache.put(ck, rows)
-    return rows
+        return [_parse_cast(c) for c in casts if isinstance(c, dict)]
+
+    return await _cache.cached(ck, settings.NEYNAR_FEED_TTL_S, _fetch) or []
 
 
 async def channel_feed(channel_ids: str | list[str], *,
@@ -232,21 +228,18 @@ async def channel_feed(channel_ids: str | list[str], *,
         return []
     capped = max(1, min(int(limit), 100))
     ck = ("channel_feed", ",".join(sorted(ids)), capped)
-    cached = _cache.get(ck, settings.NEYNAR_FEED_TTL_S)
-    if cached is not None:
-        return cached
 
-    body = await _get("/v2/farcaster/feed/channels",
-                      params={"channel_ids": ",".join(ids), "limit": capped,
-                              "with_recasts": "true"},
-                      label=f"channel_feed {','.join(ids)[:30]}")
-    rows: list[dict] = []
-    if isinstance(body, dict):
+    async def _fetch() -> list[dict] | None:
+        body = await _get("/v2/farcaster/feed/channels",
+                          params={"channel_ids": ",".join(ids), "limit": capped,
+                                  "with_recasts": "true"},
+                          label=f"channel_feed {','.join(ids)[:30]}")
+        if not isinstance(body, dict):
+            return None  # failure — not cached
         casts = body.get("casts") or []
-        rows = [_parse_cast(c) for c in casts if isinstance(c, dict)]
-    if body is not None:  # don't cache a result derived from a failed fetch
-        _cache.put(ck, rows)
-    return rows
+        return [_parse_cast(c) for c in casts if isinstance(c, dict)]
+
+    return await _cache.cached(ck, settings.NEYNAR_FEED_TTL_S, _fetch) or []
 
 
 async def trending_casts(*, channel_id: str | None = None,
@@ -254,22 +247,19 @@ async def trending_casts(*, channel_id: str | None = None,
     """Trending casts globally or in one channel."""
     capped = max(1, min(int(limit), 50))
     ck = ("trending_casts", channel_id or "", capped)
-    cached = _cache.get(ck, settings.NEYNAR_FEED_TTL_S)
-    if cached is not None:
-        return cached
 
-    params: dict = {"limit": capped}
-    if channel_id:
-        params["channel_id"] = channel_id
-    body = await _get("/v2/farcaster/feed/trending", params=params,
-                      label=f"trending_casts ch={channel_id or 'global'}")
-    rows: list[dict] = []
-    if isinstance(body, dict):
+    async def _fetch() -> list[dict] | None:
+        params: dict = {"limit": capped}
+        if channel_id:
+            params["channel_id"] = channel_id
+        body = await _get("/v2/farcaster/feed/trending", params=params,
+                          label=f"trending_casts ch={channel_id or 'global'}")
+        if not isinstance(body, dict):
+            return None  # failure — not cached
         casts = body.get("casts") or []
-        rows = [_parse_cast(c) for c in casts if isinstance(c, dict)]
-    if body is not None:  # don't cache a result derived from a failed fetch
-        _cache.put(ck, rows)
-    return rows
+        return [_parse_cast(c) for c in casts if isinstance(c, dict)]
+
+    return await _cache.cached(ck, settings.NEYNAR_FEED_TTL_S, _fetch) or []
 
 
 # ---------- token-native ----------
@@ -287,22 +277,19 @@ async def trending_fungibles(*, limit: int = 20,
     """
     capped = max(1, min(int(limit), 100))
     ck = ("trending_fungibles", time_window, capped)
-    cached = _cache.get(ck, settings.NEYNAR_TOKEN_TTL_S)
-    if cached is not None:
-        return cached
 
-    body = await _get("/v2/farcaster/fungible/trending",
-                      params={"limit": capped, "time_window": time_window},
-                      label=f"trending_fungibles {time_window}")
-    rows: list[dict] = []
-    if isinstance(body, dict):
+    async def _fetch() -> list[dict] | None:
+        body = await _get("/v2/farcaster/fungible/trending",
+                          params={"limit": capped, "time_window": time_window},
+                          label=f"trending_fungibles {time_window}")
+        if not isinstance(body, dict):
+            return None  # failure — not cached
         # Field name varies — try common alternatives.
         items = (body.get("fungibles") or body.get("tokens")
                   or body.get("trending") or [])
-        rows = [_parse_token(t) for t in items if isinstance(t, dict)]
-    if body is not None:  # don't cache a result derived from a failed fetch
-        _cache.put(ck, rows)
-    return rows
+        return [_parse_token(t) for t in items if isinstance(t, dict)]
+
+    return await _cache.cached(ck, settings.NEYNAR_TOKEN_TTL_S, _fetch) or []
 
 
 async def token_metadata(token_address: str, *,
@@ -312,26 +299,24 @@ async def token_metadata(token_address: str, *,
     if not addr:
         return None
     ck = ("token_metadata", network, addr.lower())
-    cached = _cache.get(ck, settings.NEYNAR_TOKEN_TTL_S)
-    if cached is not None:
-        return cached
 
-    body = await _get("/v2/farcaster/fungible",
-                      params={"addresses": addr, "networks": network},
-                      label=f"token_metadata {network} {addr[:10]}")
-    out: dict | None = None
-    if isinstance(body, dict):
+    async def _fetch() -> dict | None:
+        body = await _get("/v2/farcaster/fungible",
+                          params={"addresses": addr, "networks": network},
+                          label=f"token_metadata {network} {addr[:10]}")
+        if not isinstance(body, dict):
+            return None  # failure — not cached
         # Response is either {fungibles: {...}} keyed by address, or a list.
         fung = body.get("fungibles")
         if isinstance(fung, dict):
             inner = fung.get(addr.lower()) or fung.get(addr) or next(iter(fung.values()), None)
             if isinstance(inner, dict):
-                out = _parse_token(inner)
+                return _parse_token(inner)
         elif isinstance(fung, list) and fung:
-            out = _parse_token(fung[0])
-    if body is not None:  # don't cache a result derived from a failed fetch
-        _cache.put(ck, out)
-    return out
+            return _parse_token(fung[0])
+        return None
+
+    return await _cache.cached(ck, settings.NEYNAR_TOKEN_TTL_S, _fetch)
 
 
 # ---------- user / KOL ----------
@@ -346,19 +331,16 @@ async def user_by_username(username: str) -> dict | None:
     if not name:
         return None
     ck = ("user_by_username", name.lower())
-    cached = _cache.get(ck, settings.NEYNAR_USER_TTL_S)
-    if cached is not None:
-        return cached
 
-    body = await _get("/v2/farcaster/user/by_username",
-                      params={"username": name},
-                      label=f"user_by_username {name}")
-    out: dict | None = None
-    if isinstance(body, dict):
-        out = _parse_user(body.get("user"))
-    if body is not None:  # don't cache a result derived from a failed fetch
-        _cache.put(ck, out)
-    return out
+    async def _fetch() -> dict | None:
+        body = await _get("/v2/farcaster/user/by_username",
+                          params={"username": name},
+                          label=f"user_by_username {name}")
+        if not isinstance(body, dict):
+            return None  # failure — not cached
+        return _parse_user(body.get("user"))
+
+    return await _cache.cached(ck, settings.NEYNAR_USER_TTL_S, _fetch)
 
 
 async def user_popular_casts(fid: int, *, limit: int = 10) -> list[dict]:
@@ -374,20 +356,17 @@ async def user_popular_casts(fid: int, *, limit: int = 10) -> list[dict]:
         return []
     capped = max(1, min(int(limit), 50))
     ck = ("user_popular_casts", fid_i, capped)
-    cached = _cache.get(ck, settings.NEYNAR_FEED_TTL_S)
-    if cached is not None:
-        return cached
 
-    body = await _get("/v2/farcaster/feed/user/popular",
-                      params={"fid": fid_i, "limit": capped},
-                      label=f"user_popular_casts fid={fid_i}")
-    rows: list[dict] = []
-    if isinstance(body, dict):
+    async def _fetch() -> list[dict] | None:
+        body = await _get("/v2/farcaster/feed/user/popular",
+                          params={"fid": fid_i, "limit": capped},
+                          label=f"user_popular_casts fid={fid_i}")
+        if not isinstance(body, dict):
+            return None  # failure — not cached
         casts = body.get("casts") or []
-        rows = [_parse_cast(c) for c in casts if isinstance(c, dict)]
-    if body is not None:  # don't cache a result derived from a failed fetch
-        _cache.put(ck, rows)
-    return rows
+        return [_parse_cast(c) for c in casts if isinstance(c, dict)]
+
+    return await _cache.cached(ck, settings.NEYNAR_FEED_TTL_S, _fetch) or []
 
 
 async def user_balance(fid: int) -> list[dict] | None:
@@ -404,15 +383,14 @@ async def user_balance(fid: int) -> list[dict] | None:
     if fid_i < 1:
         return None
     ck = ("user_balance", fid_i)
-    cached = _cache.get(ck, settings.NEYNAR_USER_TTL_S)
-    if cached is not None:
-        return cached
 
-    body = await _get("/v2/farcaster/user/balance",
-                      params={"fid": fid_i},
-                      label=f"user_balance fid={fid_i}")
-    rows: list[dict] = []
-    if isinstance(body, dict):
+    async def _fetch() -> list[dict] | None:
+        body = await _get("/v2/farcaster/user/balance",
+                          params={"fid": fid_i},
+                          label=f"user_balance fid={fid_i}")
+        if not isinstance(body, dict):
+            return None  # failure — not cached
+        rows: list[dict] = []
         items = body.get("balances") or body.get("user_balance") or []
         for it in items:
             if not isinstance(it, dict):
@@ -422,6 +400,6 @@ async def user_balance(fid: int) -> list[dict] | None:
             row["balance"] = _f(it.get("balance") or it.get("amount"))
             row["balance_usd"] = _f(it.get("balance_usd") or it.get("value_usd"))
             rows.append(row)
-    if body is not None:  # don't cache a result derived from a failed fetch
-        _cache.put(ck, rows)
-    return rows
+        return rows
+
+    return await _cache.cached(ck, settings.NEYNAR_USER_TTL_S, _fetch) or []

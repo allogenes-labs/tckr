@@ -100,14 +100,17 @@ async def token_pairs(address, *, chain: str | None = None) -> list[dict]:
         return []
     joined = ",".join(addrs)
     ck = ("token_pairs", joined.lower())
-    pairs = _cache.get(ck, settings.DEX_TTL_S)
-    if pairs is None:
+
+    async def _fetch() -> list[dict] | None:
         body = await _http.get_json(
             f"{_BASE}/latest/dex/tokens/{joined}",
             label=f"dexscreener tokens {joined[:40]}",
         )
-        pairs = [_parse_pair(p) for p in (body or {}).get("pairs") or []]
-        _cache.put(ck, pairs)
+        if body is None:
+            return None  # failure — not cached
+        return [_parse_pair(p) for p in body.get("pairs") or []]
+
+    pairs = await _cache.cached(ck, settings.DEX_TTL_S, _fetch) or []
     return _filter_chain(pairs, _ds_chain(chain))
 
 
@@ -117,15 +120,18 @@ async def search(query: str, *, chain: str | None = None) -> list[dict]:
     if not query:
         return []
     ck = ("search", query.lower())
-    pairs = _cache.get(ck, settings.DEX_TTL_S)
-    if pairs is None:
+
+    async def _fetch() -> list[dict] | None:
         body = await _http.get_json(
             f"{_BASE}/latest/dex/search",
             params={"q": query},
             label=f"dexscreener search {query!r}",
         )
-        pairs = [_parse_pair(p) for p in (body or {}).get("pairs") or []]
-        _cache.put(ck, pairs)
+        if body is None:
+            return None  # failure — not cached
+        return [_parse_pair(p) for p in body.get("pairs") or []]
+
+    pairs = await _cache.cached(ck, settings.DEX_TTL_S, _fetch) or []
     return _filter_chain(pairs, _ds_chain(chain))
 
 
@@ -136,21 +142,20 @@ async def pair(chain: str, pair_address: str) -> dict | None:
     if not ds_chain or not pair_address:
         return None
     ck = ("pair", ds_chain, pair_address.lower())
-    cached = _cache.get(ck, settings.DEX_TTL_S)
-    if cached is not None:
-        return cached
-    body = await _http.get_json(
-        f"{_BASE}/latest/dex/pairs/{ds_chain}/{pair_address}",
-        label=f"dexscreener pair {ds_chain}/{pair_address}",
-    )
-    raw_pairs = (body or {}).get("pairs") or []
-    if not raw_pairs and (body or {}).get("pair"):
-        raw_pairs = [body["pair"]]
-    if not raw_pairs:
-        return None
-    parsed = _parse_pair(raw_pairs[0])
-    _cache.put(ck, parsed)
-    return parsed
+
+    async def _fetch() -> dict | None:
+        body = await _http.get_json(
+            f"{_BASE}/latest/dex/pairs/{ds_chain}/{pair_address}",
+            label=f"dexscreener pair {ds_chain}/{pair_address}",
+        )
+        raw_pairs = (body or {}).get("pairs") or []
+        if not raw_pairs and (body or {}).get("pair"):
+            raw_pairs = [body["pair"]]
+        if not raw_pairs:
+            return None
+        return _parse_pair(raw_pairs[0])
+
+    return await _cache.cached(ck, settings.DEX_TTL_S, _fetch)
 
 
 async def latest_boosted_tokens(*, chain: str | None = None) -> list[dict]:
@@ -164,13 +169,15 @@ async def latest_boosted_tokens(*, chain: str | None = None) -> list[dict]:
     url, description, links} rows. Filter to one chain with `chain`.
     """
     ck = ("boosts_latest",)
-    rows = _cache.get(ck, settings.DEX_TTL_S)
-    if rows is None:
+
+    async def _fetch() -> list[dict] | None:
         body = await _http.get_json(
             f"{_BASE}/token-boosts/latest/v1",
             label="dexscreener token-boosts latest",
         )
-        rows = [
+        if not isinstance(body, list):
+            return None  # failure — not cached
+        return [
             {
                 "chain": r.get("chainId"),
                 "token_address": r.get("tokenAddress"),
@@ -181,10 +188,11 @@ async def latest_boosted_tokens(*, chain: str | None = None) -> list[dict]:
                 "icon": r.get("icon"),
                 "links": r.get("links") or [],
             }
-            for r in (body if isinstance(body, list) else [])
+            for r in body
             if isinstance(r, dict)
         ]
-        _cache.put(ck, rows)
+
+    rows = await _cache.cached(ck, settings.DEX_TTL_S, _fetch) or []
     ds_chain = _ds_chain(chain)
     if not ds_chain:
         return rows
@@ -195,12 +203,14 @@ async def top_boosted_tokens(*, chain: str | None = None) -> list[dict]:
     """Most-boosted tokens overall (cumulative paid promotion ranking). Same
     shape as `latest_boosted_tokens`, sorted by `total_amount` descending."""
     ck = ("boosts_top",)
-    rows = _cache.get(ck, settings.DEX_TTL_S)
-    if rows is None:
+
+    async def _fetch() -> list[dict] | None:
         body = await _http.get_json(
             f"{_BASE}/token-boosts/top/v1",
             label="dexscreener token-boosts top",
         )
+        if not isinstance(body, list):
+            return None  # failure — not cached
         rows = [
             {
                 "chain": r.get("chainId"),
@@ -212,11 +222,13 @@ async def top_boosted_tokens(*, chain: str | None = None) -> list[dict]:
                 "icon": r.get("icon"),
                 "links": r.get("links") or [],
             }
-            for r in (body if isinstance(body, list) else [])
+            for r in body
             if isinstance(r, dict)
         ]
         rows.sort(key=lambda r: r.get("total_amount") or 0, reverse=True)
-        _cache.put(ck, rows)
+        return rows
+
+    rows = await _cache.cached(ck, settings.DEX_TTL_S, _fetch) or []
     ds_chain = _ds_chain(chain)
     if not ds_chain:
         return rows
@@ -230,13 +242,15 @@ async def latest_token_profiles(*, chain: str | None = None) -> list[dict]:
     dicts. Filter to one chain with `chain`.
     """
     ck = ("profiles",)
-    rows = _cache.get(ck, settings.DEX_TTL_S)
-    if rows is None:
+
+    async def _fetch() -> list[dict] | None:
         body = await _http.get_json(
             f"{_BASE}/token-profiles/latest/v1",
             label="dexscreener token-profiles",
         )
-        rows = [
+        if not isinstance(body, list):
+            return None  # failure — not cached
+        return [
             {
                 "chain": r.get("chainId"),
                 "token_address": r.get("tokenAddress"),
@@ -245,10 +259,11 @@ async def latest_token_profiles(*, chain: str | None = None) -> list[dict]:
                 "icon": r.get("icon"),
                 "links": r.get("links") or [],
             }
-            for r in (body if isinstance(body, list) else [])
+            for r in body
             if isinstance(r, dict)
         ]
-        _cache.put(ck, rows)
+
+    rows = await _cache.cached(ck, settings.DEX_TTL_S, _fetch) or []
     ds_chain = _ds_chain(chain)
     if not ds_chain:
         return rows

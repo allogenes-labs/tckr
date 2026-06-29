@@ -114,19 +114,18 @@ async def token_overview(address: str, *, chain: str = "solana") -> dict | None:
     if not headers:
         return None
     ck = ("token_overview", net, addr.lower())
-    cached = _cache.get(ck, settings.BIRDEYE_TTL_S)
-    if cached is not None:
-        return cached
-    body = await _http.get_json(
+
+    async def _fetch() -> dict | None:
+      body = await _http.get_json(
         f"{_BASE}/defi/token_overview",
         params={"address": addr},
         headers=headers,
         label=f"birdeye token_overview {net}/{addr[:10]}",
-    )
-    if not isinstance(body, dict) or not body.get("success"):
+      )
+      if not isinstance(body, dict) or not body.get("success"):
         return None
-    d = body.get("data") or {}
-    out = {
+      d = body.get("data") or {}
+      return {
         "chain": net,
         "address": addr,
         "symbol": d.get("symbol"),
@@ -158,9 +157,9 @@ async def token_overview(address: str, *, chain: str = "solana") -> dict | None:
         },
         "unique_wallet_count_24h": _i(d.get("uniqueWallet24h")),
         "ts": _now_iso(),
-    }
-    _cache.put(ck, out)
-    return out
+      }
+
+    return await _cache.cached(ck, settings.BIRDEYE_TTL_S, _fetch)
 
 
 # --------------------------- token security (Solana-only) ---------------------------
@@ -183,19 +182,18 @@ async def token_security(address: str) -> dict | None:
     if not headers:
         return None
     ck = ("token_security_sol", addr.lower())
-    cached = _cache.get(ck, settings.SECURITY_TTL_S)
-    if cached is not None:
-        return cached
-    body = await _http.get_json(
+
+    async def _fetch() -> dict | None:
+      body = await _http.get_json(
         f"{_BASE}/defi/token_security",
         params={"address": addr},
         headers=headers,
         label=f"birdeye token_security {addr[:10]}",
-    )
-    if not isinstance(body, dict) or not body.get("success"):
+      )
+      if not isinstance(body, dict) or not body.get("success"):
         return None
-    d = body.get("data") or {}
-    out = {
+      d = body.get("data") or {}
+      return {
         "chain": "solana",
         "address": addr,
         "creator_address": d.get("creatorAddress"),
@@ -214,9 +212,9 @@ async def token_security(address: str) -> dict | None:
         "true_token_owners_count": _i(d.get("trueTokenHolderCount")),
         "raw": d,
         "ts": _now_iso(),
-    }
-    _cache.put(ck, out)
-    return out
+      }
+
+    return await _cache.cached(ck, settings.SECURITY_TTL_S, _fetch)
 
 
 # --------------------------- top holders ---------------------------
@@ -237,31 +235,31 @@ async def top_holders(address: str, *, chain: str = "solana",
         return []
     limit = max(1, min(int(limit), 100))
     ck = ("top_holders", net, addr.lower(), limit)
-    cached = _cache.get(ck, settings.BIRDEYE_TTL_S)
-    if cached is not None:
-        return cached
-    body = await _http.get_json(
-        f"{_BASE}/defi/v3/token/holder",
-        params={"address": addr, "offset": 0, "limit": limit},
-        headers=headers,
-        label=f"birdeye holders {net}/{addr[:10]}",
-    )
-    if not isinstance(body, dict) or not body.get("success"):
-        return []
-    items = (body.get("data") or {}).get("items") or []
-    out = []
-    for it in items:
-        if not isinstance(it, dict):
-            continue
-        out.append({
-            "owner": it.get("owner"),
-            "balance": _f(it.get("amount")),
-            "ui_amount": _f(it.get("ui_amount") or it.get("uiAmount")),
-            "decimals": _i(it.get("decimals")),
-            "percent": _f(it.get("percentage") or it.get("percent")),
-        })
-    _cache.put(ck, out)
-    return out
+
+    async def _fetch() -> list[dict] | None:
+        body = await _http.get_json(
+            f"{_BASE}/defi/v3/token/holder",
+            params={"address": addr, "offset": 0, "limit": limit},
+            headers=headers,
+            label=f"birdeye holders {net}/{addr[:10]}",
+        )
+        if not isinstance(body, dict) or not body.get("success"):
+            return None  # failure — not cached
+        items = (body.get("data") or {}).get("items") or []
+        rows = []
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            rows.append({
+                "owner": it.get("owner"),
+                "balance": _f(it.get("amount")),
+                "ui_amount": _f(it.get("ui_amount") or it.get("uiAmount")),
+                "decimals": _i(it.get("decimals")),
+                "percent": _f(it.get("percentage") or it.get("percent")),
+            })
+        return rows
+
+    return await _cache.cached(ck, settings.BIRDEYE_TTL_S, _fetch) or []
 
 
 # --------------------------- trade data ---------------------------
@@ -279,27 +277,27 @@ async def trade_data(address: str, *, chain: str = "solana") -> dict | None:
     if not headers:
         return None
     ck = ("trade_data", net, addr.lower())
-    cached = _cache.get(ck, settings.BIRDEYE_TTL_S)
-    if cached is not None:
-        return cached
-    body = await _http.get_json(
-        f"{_BASE}/defi/v3/token/trade-data/single",
-        params={"address": addr},
-        headers=headers,
-        label=f"birdeye trade_data {net}/{addr[:10]}",
-    )
-    if not isinstance(body, dict) or not body.get("success"):
-        return None
-    d = body.get("data") or {}
-    out = {"chain": net, "address": addr, "ts": _now_iso()}
-    # The schema returns volumes + counts keyed by window suffix. Pull a useful
-    # subset; consumers can read `raw` for everything.
-    for window in ("30m", "1h", "2h", "4h", "8h", "24h"):
-        out[f"buy_volume_usd_{window}"] = _f(d.get(f"buy_volume_usd_{window}") or d.get(f"buyVolume{window}"))
-        out[f"sell_volume_usd_{window}"] = _f(d.get(f"sell_volume_usd_{window}") or d.get(f"sellVolume{window}"))
-        out[f"buy_count_{window}"] = _i(d.get(f"buy_{window}") or d.get(f"buy{window}"))
-        out[f"sell_count_{window}"] = _i(d.get(f"sell_{window}") or d.get(f"sell{window}"))
-        out[f"unique_wallets_{window}"] = _i(d.get(f"unique_wallet_{window}") or d.get(f"uniqueWallet{window}"))
-    out["raw"] = d
-    _cache.put(ck, out)
-    return out
+
+    async def _fetch() -> dict | None:
+        body = await _http.get_json(
+            f"{_BASE}/defi/v3/token/trade-data/single",
+            params={"address": addr},
+            headers=headers,
+            label=f"birdeye trade_data {net}/{addr[:10]}",
+        )
+        if not isinstance(body, dict) or not body.get("success"):
+            return None
+        d = body.get("data") or {}
+        out = {"chain": net, "address": addr, "ts": _now_iso()}
+        # Volumes + counts keyed by window suffix; pull a useful subset and let
+        # consumers read `raw` for everything.
+        for window in ("30m", "1h", "2h", "4h", "8h", "24h"):
+            out[f"buy_volume_usd_{window}"] = _f(d.get(f"buy_volume_usd_{window}") or d.get(f"buyVolume{window}"))
+            out[f"sell_volume_usd_{window}"] = _f(d.get(f"sell_volume_usd_{window}") or d.get(f"sellVolume{window}"))
+            out[f"buy_count_{window}"] = _i(d.get(f"buy_{window}") or d.get(f"buy{window}"))
+            out[f"sell_count_{window}"] = _i(d.get(f"sell_{window}") or d.get(f"sell{window}"))
+            out[f"unique_wallets_{window}"] = _i(d.get(f"unique_wallet_{window}") or d.get(f"uniqueWallet{window}"))
+        out["raw"] = d
+        return out
+
+    return await _cache.cached(ck, settings.BIRDEYE_TTL_S, _fetch)

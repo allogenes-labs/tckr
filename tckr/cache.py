@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -64,3 +65,25 @@ class TTLCache:
             oldest = next(iter(self._d))
             self._d.pop(oldest, None)
             self._locks.pop(oldest, None)
+
+    async def cached(self, key: tuple, ttl_s: float,
+                     factory: Callable[[], Awaitable[Any]]) -> Any:
+        """Get `key`, else fetch via `factory()` under a per-key lock.
+
+        Implements the canonical double-checked-lock pattern so concurrent
+        callers on a cold/expired key wait for one fetch instead of each firing
+        a duplicate upstream request (thundering herd). `factory` is an async
+        callable returning the value to cache; a `None` result is treated as a
+        failed/empty fetch and is NOT cached (the package's graceful-miss
+        convention), so transient failures aren't pinned for the TTL."""
+        v = self.get(key, ttl_s)
+        if v is not None:
+            return v
+        async with self.lock(key):
+            v = self.get(key, ttl_s)
+            if v is not None:
+                return v
+            v = await factory()
+            if v is not None:
+                self.put(key, v)
+            return v
