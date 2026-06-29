@@ -6,6 +6,8 @@ All notable changes to `tckr` are documented here. Format roughly follows
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-06-28
+
 ### Fixed (codebase audit)
 - **Token-safety verdicts never read "safe" on missing/partial data (P0).**
   `honeypot.is_honeypot`/`can_buy`/`can_sell` are now `None` (unknown) when the
@@ -48,6 +50,16 @@ All notable changes to `tckr` are documented here. Format roughly follows
   bundle status need no key); assorted docstring/registry corrections.
 
 ### Added
+- **`tckr.analytics` — stdlib-only quant primitives + indicators.** Pure
+  `math`/`statistics` financial math over the `list[float]` / OHLC shapes the
+  data modules already return: returns, realized vol, Sharpe/Sortino/Calmar,
+  max drawdown, SMA/EMA/WMA, RSI, MACD, Bollinger, ATR, z-score,
+  correlation/beta. Deterministic and unit-tested (vs. in-context LLM math);
+  rates are fractions and daily series annualize on 365 (crypto trades 24/7).
+  No new dependencies (numpy/pandas-free). Exposed via agent tools `ta_risk`,
+  `ta_indicators`, `ta_correlation`. Adds `history.ohlc` / `history.ohlc_one`
+  — an OHLC cascade (Hyperliquid, with a closes-only fallback for the long
+  tail) so `ta_indicators` can compute ATR where candle data is available.
 - **News & events — three new data sources + a unified cascade.** A new
   "News & events" category covering crypto-native and market-moving tradfi news:
   - **`cryptonews`** (keyless) — crypto headline aggregator over major outlet

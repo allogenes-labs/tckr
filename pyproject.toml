@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tckr"
-version = "0.3.4"
+version = "0.4.0"
 description = "Async, cached, gracefully-degrading aggregator over the major free crypto data APIs (DEX, perps, TVL, on-chain, social, launchpads, MEV) — plus an agent toolkit that exposes the data to any LLM platform via MCP, the Claude Agent SDK, OpenAI function calling, or LangChain."
 readme = "README.md"
 requires-python = ">=3.11"
