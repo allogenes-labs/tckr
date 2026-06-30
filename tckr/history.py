@@ -40,6 +40,8 @@ from datetime import UTC, datetime
 
 from tckr import coingecko as cg
 from tckr import hyperliquid as hl
+from tckr import pyth
+from tckr import yahoo
 
 log = logging.getLogger("tckr.history")
 
@@ -134,15 +136,34 @@ async def candles(symbols: list[str] | str, *, days: int = 30) -> dict[str, dict
                 closes, volumes = r
                 out[sym] = {"symbol": sym, "interval": "1d",
                             "closes": closes, "volumes": volumes,
-                            "source": "hyperliquid"}
+                            "source": "hyperliquid", "asset_class": "crypto"}
                 return
             # HL covers it but returned nothing — fall through.
+        # Non-crypto (equity/ETF/metal/FX, + commodities Pyth lacks like WTI):
+        # Yahoo is the keyless history source. Crucially we do NOT fall back to
+        # CoinGecko for a confirmed non-crypto symbol — CG would resolve a
+        # same-ticker token (e.g. XAU→a "gold" coin), reintroducing the
+        # wrong-asset bug. Absent beats wrong.
+        res = await pyth.resolve_asset(sym)
+        nc_class = (res["asset_type"] if (res and res.get("noncrypto"))
+                    else yahoo.fallback_asset_class(sym))
+        if nc_class:
+            yh = await yahoo.history(sym, asset_class=nc_class, days=days)
+            if yh and yh.get("candles"):
+                bars = yh["candles"]
+                out[sym] = {"symbol": sym, "interval": "1d",
+                            "closes": [b["c"] for b in bars],
+                            "volumes": [b.get("v") or 0.0 for b in bars],
+                            "source": "yahoo", "asset_class": nc_class}
+            else:
+                log.debug("history: no yahoo data for non-crypto %s", sym)
+            return
         r = await _cg_history(sym, days)
         if r is not None:
             closes, volumes = r
             out[sym] = {"symbol": sym, "interval": "1d",
                         "closes": closes, "volumes": volumes,
-                        "source": "coingecko"}
+                        "source": "coingecko", "asset_class": "crypto"}
             return
         log.debug("history: unresolved %s", sym)
 
@@ -183,27 +204,39 @@ async def ohlc(symbols: list[str] | str, *, days: int = 30) -> dict[str, dict]:
     out: dict[str, dict] = {}
 
     async def _one(sym: str) -> None:
-        if sym not in hl_syms:
-            return  # no full-OHLC source covers this symbol — caller uses `candles`
-        r = await hl.candles(sym, interval="1d", limit=days)
-        rows = (r or {}).get("candles") or []
-        bars: list[dict] = []
-        for c in rows:
-            close = c.get("c")
-            if close is None:
-                continue
-            base_vol = c.get("v") or 0.0
-            bars.append({
-                "t": c.get("t"),
-                "o": c.get("o"),
-                "h": c.get("h"),
-                "l": c.get("l"),
-                "c": float(close),
-                "v": float(base_vol) * float(close),  # USD, matches `candles`
-            })
-        if bars:
-            out[sym] = {"symbol": sym, "interval": "1d",
-                        "candles": bars[-days:], "source": "hyperliquid"}
+        if sym in hl_syms:
+            r = await hl.candles(sym, interval="1d", limit=days)
+            rows = (r or {}).get("candles") or []
+            bars: list[dict] = []
+            for c in rows:
+                close = c.get("c")
+                if close is None:
+                    continue
+                base_vol = c.get("v") or 0.0
+                bars.append({
+                    "t": c.get("t"),
+                    "o": c.get("o"),
+                    "h": c.get("h"),
+                    "l": c.get("l"),
+                    "c": float(close),
+                    "v": float(base_vol) * float(close),  # USD, matches `candles`
+                })
+            if bars:
+                out[sym] = {"symbol": sym, "interval": "1d",
+                            "candles": bars[-days:], "source": "hyperliquid",
+                            "asset_class": "crypto"}
+            return
+        # Non-crypto full OHLC via Yahoo (true daily O/H/L/C — enables ATR for
+        # equities/metals/commodities that the closes-only CoinGecko fallback can't).
+        res = await pyth.resolve_asset(sym)
+        nc_class = (res["asset_type"] if (res and res.get("noncrypto"))
+                    else yahoo.fallback_asset_class(sym))
+        if nc_class:
+            yh = await yahoo.history(sym, asset_class=nc_class, days=days)
+            if yh and yh.get("candles"):
+                out[sym] = {"symbol": sym, "interval": "1d",
+                            "candles": yh["candles"][-days:], "source": "yahoo",
+                            "asset_class": nc_class}
 
     await asyncio.gather(*(_one(s) for s in syms))
     return out

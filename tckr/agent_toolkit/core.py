@@ -37,6 +37,26 @@ log = logging.getLogger("tckr.agent_toolkit")
 
 MAX_ROWS = 25                # default cap for list-returning tools
 
+# Routing hints surfaced by `capabilities` + render_tools_doc so an agent picks
+# the right keyless tool per asset class instead of forcing everything through
+# the crypto cascade (which silently mis-resolves non-crypto / ambiguous tickers).
+USAGE_HINTS = [
+    "Crypto majors/mid-caps: quote / candles / ta_risk / ta_indicators just work "
+    "(Hyperliquid primary, CoinGecko backstop).",
+    "Equities & ETFs (MU, AAPL, SPY): spot via quote (routes to Pyth) or "
+    "py_latest_price; daily history/TA via candles/ta_* (routes to Yahoo); options "
+    "+ greeks via opt_chain / opt_expirations (CBOE, keyless).",
+    "Commodities & metals (gold/XAU, silver/XAG): spot via quote/py_latest_price; "
+    "daily history via candles (Yahoo, mapped to futures e.g. GC=F/CL=F).",
+    "Memecoins / ambiguous tickers: call token_resolve FIRST to pick a "
+    "token_address among same-symbol tokens, then quote <address> and gt_pool_ohlcv "
+    "for pool-level TA. Treat young-pool annualized stats as unreliable.",
+    "Token safety (EVM): security_token (GoPlus) + honeypot_check. A missing verdict "
+    "means UNKNOWN, never safe. Solana token security has no keyless source.",
+    "A `quote` result with a `warning` was resolved via CoinGecko with an "
+    "unverifiable asset class — cross-check with py_latest_price before trusting it.",
+]
+
 
 # ============================================================================
 # ToolSpec + registration decorator
@@ -138,12 +158,15 @@ def _sort_by(rows: list, field: str, desc: bool = True) -> list:
     "List every tckr module + its access tier (keyless / keyed-free / "
     "keyed-paid) and whether it is currently configured in this environment. "
     "Call this ONCE at session start to learn which tools will actually work — "
-    "unconfigured tools still appear in the tool list but will error when called.",
+    "unconfigured tools still appear in the tool list but will error when called. "
+    "Also returns `usage_hints` — which keyless tool to use per asset class.",
     module="",
     schema={"type": "object", "properties": {}},
 )
 async def _t_capabilities(args: dict) -> dict:
-    return registry.capabilities()
+    caps = registry.capabilities()
+    caps["usage_hints"] = USAGE_HINTS
+    return caps
 
 
 # ============================================================================
@@ -399,11 +422,15 @@ async def _t_hl_spot_universe(args: dict) -> list:
 
 @register_tool(
     "quote",
-    "Best-effort USD spot price for one or more symbols, cascading "
-    "CoinGecko → Hyperliquid so a rate-limited CG falls through to HL marks. "
-    "Prefer this over `cg_simple_price` or `hl_perp` when you only need a price "
-    "and don't care which source answers. Returns {symbol: {symbol, price, "
-    "source, ts}}; unresolvable symbols absent.",
+    "Best-effort USD spot price for one or more symbols OR contract addresses, "
+    "routed by asset class: contract address → DexScreener deepest pool; "
+    "HL-universe ticker → Hyperliquid mark; non-crypto ticker (equity/ETF/metal/"
+    "FX) → Pyth oracle; else CoinGecko. This is the safe default — it stops the "
+    "crypto cascade from silently pricing a same-ticker token for a stock/metal "
+    "(e.g. XAU, SPY). Returns {key: {symbol, price, source, asset_class, ts, "
+    "warning?}} keyed by your input; a CoinGecko-only result with an unverifiable "
+    "class carries a `warning`. Pass a 0x.../base58 address to price a specific "
+    "token (use token_resolve first if a memecoin symbol is ambiguous).",
     module="",  # cascade — not tied to a single registry module
     schema={
         "type": "object",
@@ -427,11 +454,12 @@ async def _t_quote(args: dict) -> dict:
 
 @register_tool(
     "candles",
-    "Best-effort daily candle history for one or more symbols, cascading "
-    "CoinGecko `market_chart` → Hyperliquid `candles`. Prefer this when you "
-    "just want closes + volumes and don't care which source answers. Returns "
-    "{symbol: {symbol, interval, closes, volumes, source}}; symbols no source "
-    "could resolve are absent. Volume scale depends on source — check `source`.",
+    "Best-effort daily candle history for one or more symbols, routed by asset "
+    "class: Hyperliquid → CoinGecko for crypto, and **Yahoo Finance** for non-crypto "
+    "(equities/ETFs/metals/FX) so technical analysis works off-crypto instead of "
+    "resolving a same-ticker token. Returns {symbol: {symbol, interval, closes, "
+    "volumes, source, asset_class}}; unresolved symbols absent. Volume scale "
+    "depends on source — check `source`.",
     module="",
     schema={
         "type": "object",
@@ -779,6 +807,126 @@ async def _t_ds_latest_profiles(args: dict):
     from tckr import dexscreener as ds
     rows = await ds.latest_token_profiles(chain=args.get("chain"))
     return _cap(rows, args.get("limit", 15))
+
+
+@register_tool(
+    "token_resolve",
+    "Disambiguate a token SYMBOL into concrete contract(s) before pricing or "
+    "analyzing it — essential for memecoins, where one ticker (e.g. 'ANSEM') maps "
+    "to many distinct tokens. Searches DEX pairs keyless and returns candidates "
+    "ranked by liquidity, de-duplicated to distinct token contracts: {query, "
+    "n_pairs, n_distinct_tokens, candidates:[{name, symbol, chain, token_address, "
+    "pair_address, price_usd, liquidity_usd, fdv_usd, volume_24h, created_at}], "
+    "ambiguous, note}. When `n_distinct_tokens > 1` the symbol is AMBIGUOUS — pick "
+    "a token_address and pass it to `quote` / `gt_pool_ohlcv` rather than trusting "
+    "a bare-symbol price.",
+    module="dexscreener",
+    schema={
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "description": "Token symbol or name, e.g. ANSEM"},
+            "chain": {"type": "string", "description": "Optional chain filter (solana, base, ethereum)"},
+            "limit": {"type": "integer", "description": f"Max candidates (default 10, max {MAX_ROWS})", "default": 10},
+        },
+        "required": ["query"],
+    },
+)
+async def _t_token_resolve(args: dict) -> dict:
+    from tckr import dexscreener as ds
+    q = (args.get("query") or "").strip()
+    rows = await ds.search(q, chain=args.get("chain")) or []
+    ql = q.lower()
+    # Prefer exact base-symbol matches; fall back to all pairs if none match.
+    matches = [r for r in rows
+               if (r.get("base_token") or {}).get("symbol", "").lower() == ql]
+    pool = matches or rows
+    # Keep the deepest-liquidity pair per distinct token contract.
+    best_by_token: dict[str, dict] = {}
+    for r in pool:
+        addr = (r.get("base_token") or {}).get("address")
+        if not addr:
+            continue
+        cur = best_by_token.get(addr)
+        if cur is None or (r.get("liquidity_usd") or 0) > (cur.get("liquidity_usd") or 0):
+            best_by_token[addr] = r
+    ranked = sorted(best_by_token.values(),
+                    key=lambda r: r.get("liquidity_usd") or 0.0, reverse=True)
+    candidates = [{
+        "name": (r.get("base_token") or {}).get("name"),
+        "symbol": (r.get("base_token") or {}).get("symbol"),
+        "chain": r.get("chain"),
+        "token_address": (r.get("base_token") or {}).get("address"),
+        "pair_address": r.get("pair_address"),
+        "price_usd": r.get("price_usd"),
+        "liquidity_usd": r.get("liquidity_usd"),
+        "fdv_usd": r.get("fdv_usd"),
+        "volume_24h": (r.get("volume") or {}).get("h24"),
+        "created_at": r.get("created_at"),
+    } for r in ranked]
+    n_distinct = len(best_by_token)
+    note = (f"{n_distinct} distinct tokens share symbol {q!r} — AMBIGUOUS; pick a "
+            "token_address" if n_distinct > 1 else
+            (f"single token resolved for {q!r}" if n_distinct == 1 else
+             f"no DEX token found for {q!r}"))
+    return {
+        "query": q,
+        "n_pairs": len(rows),
+        "n_distinct_tokens": n_distinct,
+        "ambiguous": n_distinct > 1,
+        "candidates": _cap(candidates, args.get("limit", 10)),
+        "note": note,
+    }
+
+
+# ============================================================================
+# Security: contract scans (GoPlus) + sell-simulation (Honeypot) — keyless
+# ============================================================================
+
+@register_tool(
+    "security_token",
+    "Keyless EVM token contract security scan via GoPlus. Returns the flattened "
+    "report plus a `risk_summary` {risk_level, hard_blockers, soft_warnings} — "
+    "honeypot, hidden owner, fake-renounce, mintable, blacklist, sell-tax, top-10 "
+    "holder concentration, LP-lock %, and more. For any token < ~72h old this is "
+    "the most important pre-trade check. IMPORTANT: a missing/partial record reads "
+    "as risk_level 'unknown', never 'safe' — absence of a verdict is not a clean "
+    "bill of health. EVM chains only (Solana token security has no keyless source).",
+    module="goplus",
+    schema={
+        "type": "object",
+        "properties": {
+            "chain": {"type": "string", "description": "EVM chain: ethereum, base, bsc, arbitrum, ..."},
+            "address": {"type": "string", "description": "Token contract address (0x...)"},
+        },
+        "required": ["chain", "address"],
+    },
+)
+async def _t_security_token(args: dict):
+    from tckr import goplus
+    return await goplus.token_security(args["chain"], args["address"])
+
+
+@register_tool(
+    "honeypot_check",
+    "Keyless honeypot sell-simulation via honeypot.is — actually simulates a buy "
+    "AND sell to verify you can exit, returning {is_honeypot, can_buy, can_sell, "
+    "buy_tax, sell_tax, max_buy_usd, max_sell_usd, risk_label, flags}. A strong "
+    "second source to security_token: contracts that LOOK fine statically can still "
+    "block the exit at the router. IMPORTANT: is_honeypot / can_sell are `null` "
+    "(UNKNOWN, not safe) when the simulation can't run. ETH / BSC / Base only.",
+    module="honeypot",
+    schema={
+        "type": "object",
+        "properties": {
+            "chain": {"type": "string", "description": "ethereum, bsc, or base"},
+            "address": {"type": "string", "description": "Token contract address (0x...)"},
+        },
+        "required": ["chain", "address"],
+    },
+)
+async def _t_honeypot_check(args: dict):
+    from tckr import honeypot
+    return await honeypot.is_honeypot(args["chain"], args["address"])
 
 
 # ============================================================================
@@ -1766,14 +1914,70 @@ def _last(xs):
     return xs[-1] if xs else None
 
 
+# Non-crypto daily series annualize on ~252 trading days; crypto trades 24/7 (365).
+_NONCRYPTO_CLASSES = {"equity", "etf", "fx", "metal", "rates", "commodity", "commodities"}
+_MIN_ANNUALIZE_BARS = 30          # below this, annualized stats are noise
+_EXTREME_BAR_RETURN = 3.0         # a single +300% bar ⇒ launch/illiquid artifact
+
+
+def _periods_per_year(asset_class: str | None) -> int:
+    return 252 if (asset_class or "").lower() in _NONCRYPTO_CLASSES else 365
+
+
+def _assess_series_quality(closes: list, asset_class: str | None) -> dict:
+    """Judge whether a close series is long/clean enough for reliable annualized
+    risk stats. Returns {n_bars, periods_per_year, reliable, warnings}. Pure —
+    unit-tested in tests/test_ta_guardrails.py.
+
+    `reliable` is False when the series is too short (< 30 bars) or contains an
+    extreme single-bar move (> 300%, typical of a freshly-launched pool's ramp);
+    callers then suppress annualized vol / Sharpe / Sortino / Calmar, which would
+    otherwise read as absurd (e.g. a 13-day memecoin pool ⇒ 25,000% 'vol')."""
+    n = len(closes or [])
+    warnings: list[str] = []
+    reliable = True
+    if n < _MIN_ANNUALIZE_BARS:
+        reliable = False
+        warnings.append(
+            f"only {n} bars (<{_MIN_ANNUALIZE_BARS}) — annualized vol/Sharpe/"
+            "Sortino/Calmar suppressed as unreliable on so short a series")
+    # Extreme single-bar move ⇒ launch ramp / illiquid; annualization explodes.
+    extreme = False
+    for prev, cur in zip(closes or [], (closes or [])[1:]):
+        if prev and prev > 0 and abs(cur / prev - 1.0) > _EXTREME_BAR_RETURN:
+            extreme = True
+            break
+    if extreme:
+        reliable = False
+        warnings.append(
+            "series contains an extreme single-bar move (>300%) — likely a "
+            "launch/illiquid artifact; annualized risk stats are not meaningful")
+    return {"n_bars": n, "periods_per_year": _periods_per_year(asset_class),
+            "reliable": reliable, "warnings": warnings}
+
+
+async def _no_history_hint(sym: str) -> dict:
+    """Asset-class-aware explanation + next step when no daily history resolves."""
+    from tckr import pyth
+    res = await pyth.resolve_asset(sym)
+    if res and res.get("noncrypto"):
+        return {"error": f"no keyless daily history for {sym} ({res['asset_type']})",
+                "asset_class": res["asset_type"],
+                "hint": "spot price is available via py_latest_price; options via "
+                        "opt_chain / opt_expirations (CBOE, keyless)"}
+    return {"error": "insufficient candle history"}
+
+
 @register_tool(
     "ta_risk",
     "Risk & performance stats for one symbol over a daily-close window — computed "
-    "deterministically (not estimated) from the `candles` cascade (HL→CG). Returns "
-    "{symbol, source, n_bars, lookback_days, cumulative_return_pct, "
-    "annualized_volatility_pct, sharpe, sortino, calmar, max_drawdown_pct}. "
-    "Annualized on 365 (crypto trades 24/7). Prefer this over eyeballing candles "
-    "for vol / drawdown / risk-adjusted return.",
+    "deterministically from the `candles` cascade (crypto: HL→CG; non-crypto: "
+    "Yahoo). Returns {symbol, source, asset_class, n_bars, lookback_days, "
+    "periods_per_year, cumulative_return_pct, annualized_volatility_pct, sharpe, "
+    "sortino, calmar, max_drawdown_pct, data_quality, warnings}. Annualizes on 365 "
+    "for crypto, 252 for tradfi. GUARDRAIL: on a too-short (<30 bars) or launch-"
+    "ramp series the annualized stats are returned as null with a `warnings` entry "
+    "rather than absurd values — check `data_quality.reliable`.",
     module="",  # local compute over fetched data
     schema={
         "type": "object",
@@ -1792,23 +1996,33 @@ async def _t_ta_risk(args: dict) -> dict:
     data = await history.candles_one(sym, days=days)
     closes = (data or {}).get("closes") or []
     if len(closes) < 2:
-        return {"symbol": sym, "n_bars": len(closes), "error": "insufficient candle history"}
+        return {"symbol": sym, "n_bars": len(closes), **(await _no_history_hint(sym))}
 
     def _pct(x):
         return x * 100.0 if x is not None else None
 
+    asset_class = (data or {}).get("asset_class")
+    q = _assess_series_quality(closes, asset_class)
+    ppy = q["periods_per_year"]
     mdd = an.max_drawdown(closes)
+    # Suppress annualized stats on an unreliable (too short / launch-ramp) series —
+    # a number like "25,000% annualized vol" is worse than an honest null.
+    ann_ok = q["reliable"]
     return {
         "symbol": sym,
         "source": (data or {}).get("source"),
+        "asset_class": asset_class,
         "n_bars": len(closes),
         "lookback_days": days,
+        "periods_per_year": ppy,
         "cumulative_return_pct": _pct(an.cumulative_return(closes)),
-        "annualized_volatility_pct": _pct(an.volatility(closes)),
-        "sharpe": an.sharpe(closes),
-        "sortino": an.sortino(closes),
-        "calmar": an.calmar(closes),
+        "annualized_volatility_pct": _pct(an.volatility(closes, periods_per_year=ppy)) if ann_ok else None,
+        "sharpe": an.sharpe(closes, periods_per_year=ppy) if ann_ok else None,
+        "sortino": an.sortino(closes, periods_per_year=ppy) if ann_ok else None,
+        "calmar": an.calmar(closes, periods_per_year=ppy) if ann_ok else None,
         "max_drawdown_pct": _pct(mdd["max_drawdown"]) if mdd else None,
+        "data_quality": {"reliable": q["reliable"], "n_bars": q["n_bars"]},
+        "warnings": q["warnings"],
     }
 
 
@@ -1848,19 +2062,25 @@ async def _t_ta_indicators(args: dict) -> dict:
     if bars:
         closes = [b["c"] for b in bars]
         source = bars_data.get("source")
+        asset_class = bars_data.get("asset_class")
     else:
         cl = await history.candles_one(sym, days=days)
         closes = (cl or {}).get("closes") or []
         source = (cl or {}).get("source")
+        asset_class = (cl or {}).get("asset_class")
     out: dict = {
         "symbol": sym,
         "source": source,
+        "asset_class": asset_class,
         "n_bars": len(closes),
         "last_close": _last(closes),
     }
     if len(closes) < 2:
-        out["error"] = "insufficient candle history"
+        out.update(await _no_history_hint(sym))
         return out
+    q = _assess_series_quality(closes, asset_class)
+    out["data_quality"] = {"reliable": q["reliable"], "n_bars": q["n_bars"]}
+    out["warnings"] = q["warnings"]
     if "sma" in wanted:
         out["sma_20"] = _last(an.sma(closes, 20))
     if "ema" in wanted:
@@ -1916,15 +2136,24 @@ async def _t_ta_correlation(args: dict) -> dict:
     if n < 3:
         return {"symbol": sym, "benchmark": bench, "n_returns": max(0, n - 1),
                 "error": "insufficient overlapping candle history"}
+    beta = an.beta(a, b)
+    warnings: list[str] = []
+    if n - 1 < _MIN_ANNUALIZE_BARS:
+        warnings.append(f"only {n - 1} overlapping returns (<{_MIN_ANNUALIZE_BARS}) "
+                        "— correlation/beta are noisy on so short a window")
+    if beta is not None and abs(beta) > 10:
+        warnings.append(f"beta={beta:.1f} is implausibly large — usually means an "
+                        "illiquid/young or mismatched-asset-class series, not a real hedge ratio")
     return {
         "symbol": sym,
         "benchmark": bench,
         "days": days,
         "n_returns": n - 1,
         "correlation": an.correlation(a, b),
-        "beta": an.beta(a, b),
+        "beta": beta,
         "sources": {sym: (data.get(sym) or {}).get("source"),
                     bench: (data.get(bench) or {}).get("source")},
+        "warnings": warnings,
     }
 
 
@@ -1974,4 +2203,7 @@ def render_tools_doc() -> str:
         for spec in bucket:
             lines.append(f"    - {spec.name}: {augment_description(spec)}")
         lines.append("")
+    lines.append("  [Routing hints — pick the right keyless tool per asset class]")
+    for hint in USAGE_HINTS:
+        lines.append(f"    - {hint}")
     return "\n".join(lines).rstrip()

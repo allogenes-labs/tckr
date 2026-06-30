@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ANSEM — Asset Analysis (tckr, keyless · post-fix)</title>
+<style>
+  :root{--bg:#0d1117;--card:#161b22;--ink:#e6edf3;--mut:#8b949e;--good:#3fb950;--bad:#f85149;--warn:#d29922;--accent:#58a6ff;--line:#30363d}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;padding:28px}
+  .wrap{max-width:880px;margin:0 auto}
+  h1{margin:0 0 2px;font-size:26px}
+  h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);margin:26px 0 10px;border-bottom:1px solid var(--line);padding-bottom:6px}
+  .sub{color:var(--mut);margin:0 0 18px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px}
+  .k{color:var(--mut);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+  .v{font-size:20px;font-weight:650;margin-top:4px}
+  .good{color:var(--good)}.bad{color:var(--bad)}.warn{color:var(--warn)}.accent{color:var(--accent)}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line)}
+  th{color:var(--mut);font-weight:600}
+  .mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px}
+  .pill{display:inline-block;font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--mut)}
+  .alert{background:#2b1416;border:1px solid #5c1f22;border-radius:10px;padding:13px 15px;font-size:13.5px;color:#f0b3b6}
+  .gap{background:#2b2410;border:1px solid #5c4711;border-radius:10px;padding:12px 14px;font-size:13px;color:#e3c878}
+  .ok{background:#11261a;border:1px solid #1f5132;border-radius:10px;padding:12px 14px;font-size:13px;color:#a3d9b1}
+  .foot{color:var(--mut);font-size:12px;margin-top:26px;border-top:1px solid var(--line);padding-top:12px}
+  code{background:#0b0f14;padding:1px 5px;border-radius:5px;color:#c9d1d9}
+</style>
+</head>
+<body><div class="wrap">
+
+  <h1>ANSEM <span class="pill">Solana memecoin</span> <span class="pill">keyless</span></h1>
+  <p class="sub">Asset analysis · generated from <strong>tckr</strong> with <strong>no API keys</strong> · 2026-06-30 · <em>post resolver + guardrail fix</em></p>
+
+  <div class="alert">⚠ <strong>Ticker is ambiguous — and tckr now says so explicitly.</strong> <code>token_resolve("ANSEM")</code> returns <code>n_distinct_tokens: 20, ambiguous: true</code>. There is no canonical "ANSEM"; you must pick a contract address. (Pre-fix, <code>quote</code> silently priced one of them with no signal.)</p></div>
+
+  <h2>Step 1 — disambiguate (token_resolve)</h2>
+  <table>
+    <tr><th>Name</th><th>Price</th><th>Liquidity</th><th>24h vol</th><th>Created</th><th>Contract</th></tr>
+    <tr><td><strong>The Black Bull</strong></td><td>$0.0847</td><td>$34.6M</td><td class="bad">~$0</td><td>recent</td><td class="mono">BWVLAf…1p7Y7</td></tr>
+    <tr style="background:#13241a"><td>The Black Bull ◄ <span class="good">active market</span></td><td>$0.092</td><td>$1.32M</td><td class="good">live</td><td>2026-06</td><td class="mono">9cRCn9…TGpump</td></tr>
+    <tr><td>The Black Bull</td><td>$0.044</td><td>$0.07M</td><td>low</td><td>2026-06</td><td class="mono">6KDh3w…G7pump</td></tr>
+    <tr><td>Ansem <span class="warn">(distinct, 2024)</span></td><td>$0.00015</td><td>$0.04M</td><td>low</td><td>2024-04</td><td class="mono">F23Gvg…Zc18B</td></tr>
+    <tr><td>ansemification</td><td>—</td><td>—</td><td>—</td><td>recent</td><td class="mono">C1kc9q…3pump</td></tr>
+  </table>
+  <div class="gap" style="margin-top:10px">⚠ <strong>Liquidity ≠ activity.</strong> The deepest-liquidity pool (BWVL…, $34.6M) shows essentially <strong>zero 24h volume</strong> — a seeded-but-untraded pool. The genuinely traded market is the 9cRCn… token. Rank candidates by <em>volume</em>, not just liquidity, before trusting a price.</p></div>
+
+  <h2>Step 2 — price the chosen contract</h2>
+  <div class="grid">
+    <div class="card"><div class="k">Price (by address)</div><div class="v">$0.085</div></div>
+    <div class="card"><div class="k">FDV</div><div class="v">$84.7M</div></div>
+    <div class="card"><div class="k">source</div><div class="v accent">dexscreener</div></div>
+  </div>
+  <p class="sub" style="margin-top:10px">✓ <code>quote(["BWVLAf…1p7Y7"])</code> now accepts a raw contract address and prices the deepest DEX pool directly — no symbol guessing. Token fundamentals (price, FDV, supply) come keyless from GeckoTerminal + DexScreener.</p>
+
+  <h2>Step 3 — technicals are now guard-railed</h2>
+  <div class="ok">✓ <strong>No more nonsense numbers.</strong> <code>ta_risk("ANSEM")</code> on the 10-bar CoinGecko series now returns <code>data_quality.reliable: false</code> and <strong>suppresses the annualized stats</strong> (vol/Sharpe/Sortino/Calmar = null) with warnings:
+  <ul style="margin:8px 0 0">
+    <li>"only 10 bars (&lt;30) — annualized stats suppressed as unreliable"</li>
+    <li>"extreme single-bar move (&gt;300%) — likely a launch/illiquid artifact"</li>
+  </ul>
+  Pre-fix this same call reported a confident <strong>+40,000% return / 25,000% vol / beta 175</strong>.</p></div>
+
+  <h2>Still the keyless ceiling for Solana memecoins</h2>
+  <table>
+    <tr><th>Wanted</th><th>Status (no keys)</th><th>Unlocks</th></tr>
+    <tr><td>Holder concentration / top wallets</td><td class="bad">unavailable</td><td>Birdeye / Helius / Solscan key</td></tr>
+    <tr><td>Contract security (mint/freeze, LP burn)</td><td class="bad">unavailable</td><td>Birdeye (GoPlus/Honeypot are EVM-only)</td></tr>
+    <tr><td>Social / sentiment / news</td><td class="bad">unavailable</td><td>LunarCrush / Neynar / Finnhub key</td></tr>
+  </table>
+  <div class="alert" style="margin-top:14px">⛔ <strong>Risk note unchanged:</strong> there is still no keyless holder/honeypot check for a <em>Solana</em> token (tckr's <code>security_token</code>/<code>honeypot_check</code> cover EVM only). Treat the missing security verdict as "unknown", never "safe".</p></div>
+
+  <p class="foot">Sources: DexScreener + GeckoTerminal (resolve, price, fundamentals, pool OHLCV), CoinGecko (symbol series). All keyless. Holder/security/social require API keys. Point-in-time; not investment advice.</p>
+
+</div></body></html>

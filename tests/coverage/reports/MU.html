@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MU (Micron) — Asset Analysis (tckr, keyless · post-fix)</title>
+<style>
+  :root{--bg:#0d1117;--card:#161b22;--ink:#e6edf3;--mut:#8b949e;--good:#3fb950;--bad:#f85149;--warn:#d29922;--accent:#58a6ff;--line:#30363d}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;padding:28px}
+  .wrap{max-width:880px;margin:0 auto}
+  h1{margin:0 0 2px;font-size:26px}
+  h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);margin:26px 0 10px;border-bottom:1px solid var(--line);padding-bottom:6px}
+  .sub{color:var(--mut);margin:0 0 18px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px}
+  .k{color:var(--mut);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+  .v{font-size:20px;font-weight:650;margin-top:4px}
+  .good{color:var(--good)}.bad{color:var(--bad)}.warn{color:var(--warn)}.accent{color:var(--accent)}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line)}
+  th{color:var(--mut);font-weight:600}
+  .pill{display:inline-block;font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--mut)}
+  .ok{background:#11261a;border:1px solid #1f5132;border-radius:10px;padding:12px 14px;font-size:13px;color:#a3d9b1}
+  .gap{background:#2b2410;border:1px solid #5c4711;border-radius:10px;padding:12px 14px;font-size:13px;color:#e3c878}
+  .foot{color:var(--mut);font-size:12px;margin-top:26px;border-top:1px solid var(--line);padding-top:12px}
+  code{background:#0b0f14;padding:1px 5px;border-radius:5px;color:#c9d1d9}
+</style>
+</head>
+<body><div class="wrap">
+
+  <h1>MU — Micron Technology <span class="pill">US equity</span> <span class="pill">keyless</span></h1>
+  <p class="sub">Asset analysis · generated from <strong>tckr</strong> with <strong>no API keys</strong> · 2026-06-30 · <em>post asset-class-routing fix</em></p>
+
+  <div class="ok">✓ <strong>Full keyless tradfi coverage.</strong> After the asset-class-routing fix, a no-key setup now triangulates Micron correctly end-to-end: oracle spot (Pyth), real daily history &amp; technicals (Yahoo), and a live options chain (CBOE) — no crypto same-ticker contamination.</p></div>
+
+  <h2>Price</h2>
+  <div class="grid">
+    <div class="card"><div class="k">Spot (Pyth oracle)</div><div class="v">$1,143.72 <span class="k">±1.64</span></div></div>
+    <div class="card"><div class="k">via <code>quote</code></div><div class="v accent">routes → Pyth</div></div>
+    <div class="card"><div class="k">asset_class</div><div class="v">equity</div></div>
+  </div>
+  <p class="sub" style="margin-top:10px"><code>quote(["MU"])</code> now returns <code>{source: "pyth", asset_class: "equity"}</code> — it no longer silently prices a same-ticker crypto/tokenized token. (For comparison, the pre-fix run resolved "MU" through the crypto cascade; "XAU" and "SPY" returned outright wrong tokens. That class of error is now closed.)</p>
+
+  <h2>Risk &amp; performance — 250d <span class="pill">source: Yahoo</span></h2>
+  <div class="grid">
+    <div class="card"><div class="k">Cumulative return</div><div class="v good">+847.4%</div></div>
+    <div class="card"><div class="k">Annualized vol</div><div class="v">74.8%</div></div>
+    <div class="card"><div class="k">Max drawdown</div><div class="v bad">−30.3%</div></div>
+    <div class="card"><div class="k">Sharpe</div><div class="v">3.42</div></div>
+    <div class="card"><div class="k">Sortino</div><div class="v">6.07</div></div>
+    <div class="card"><div class="k">Calmar</div><div class="v">28.8</div></div>
+  </div>
+  <p class="sub" style="margin-top:10px">Computed from 250 daily closes via the new keyless Yahoo history source, annualized on <strong>252</strong> trading days (equity convention, not crypto's 365). <code>data_quality.reliable = true</code>, no warnings — contrast the pre-fix report, which could only compute on an 8-bar tokenized-stock proxy and produced garbage.</p>
+
+  <h2>Technicals — 200d</h2>
+  <table>
+    <tr><th>Indicator</th><th>Value</th><th>Read</th></tr>
+    <tr><td>Last close</td><td>$1,145.28</td><td>—</td></tr>
+    <tr><td>SMA(20) / EMA(20)</td><td>$1,044 / $1,035</td><td>price extended above mean</td></tr>
+    <tr><td>RSI(14)</td><td>59.6</td><td><span class="warn">mild-bullish, not overbought</span></td></tr>
+    <tr><td>MACD hist</td><td>−0.89</td><td>momentum flattening near the highs</td></tr>
+    <tr><td>ATR(14)</td><td>$97.3</td><td>~8.5% daily range <span class="good">(ATR now available — Yahoo gives true OHLC)</span></td></tr>
+  </table>
+
+  <h2>Options chain <span class="pill">CBOE · keyless</span></h2>
+  <div class="grid">
+    <div class="card"><div class="k">Expiries</div><div class="v">19</div></div>
+    <div class="card"><div class="k">Strike range</div><div class="v">$5 – $2,500</div></div>
+    <div class="card"><div class="k">Greeks + IV</div><div class="v good">yes (ATM)</div></div>
+  </div>
+  <p class="sub" style="margin-top:10px">Weekly expiries with full greeks (delta/gamma/theta/vega/rho) + IV on near-the-money contracts via CBOE's delayed (~15m) feed — no Alpaca key needed.</p>
+
+  <h2>Keyless coverage scorecard — MU</h2>
+  <table>
+    <tr><th>Capability</th><th>Pre-fix</th><th>Now</th></tr>
+    <tr><td>Spot price</td><td class="warn">proxy (lucky)</td><td class="good">✓ Pyth oracle, class-tagged</td></tr>
+    <tr><td>Technical analysis / history</td><td class="bad">✗ unavailable</td><td class="good">✓ Yahoo (252-day annualized, ATR)</td></tr>
+    <tr><td>Options + greeks</td><td class="good">✓ CBOE</td><td class="good">✓ CBOE</td></tr>
+    <tr><td>News</td><td class="bad">flaky</td><td class="warn">GDELT-only (rate gate added; free Finnhub key for reliable per-ticker)</td></tr>
+    <tr><td>Fundamentals (revenue/EPS)</td><td class="bad">✗</td><td class="bad">✗ keyless</td></tr>
+  </table>
+
+  <div class="gap" style="margin-top:14px">⚙ <strong>Still keyed:</strong> company fundamentals and reliable per-ticker news. Everything in the price/TA/options stack above is now keyless.</div>
+
+  <p class="foot">Sources: Pyth (oracle spot), Yahoo Finance (daily history/TA), CBOE (options). All keyless. Point-in-time; not investment advice.</p>
+
+</div></body></html>

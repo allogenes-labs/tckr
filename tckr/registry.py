@@ -187,6 +187,13 @@ REGISTRY: dict[str, ModuleSpec] = {
         notes="Pyth Network Hermes — on-chain oracle prices (~400 feeds: "
               "crypto, equities, FX, metals, rates). Sub-second cadence.",
     ),
+    "yahoo": ModuleSpec(
+        "yahoo", Tier.KEYLESS_FREE,
+        notes="Keyless daily OHLC history for non-crypto assets (US equities/ETFs, "
+              "metals, energy, FX) via Yahoo Finance's public chart API. The history "
+              "backstop that lets ta_risk/ta_indicators work off-crypto; pairs with "
+              "Pyth (spot) and CBOE (options) for the no-key tradfi stack.",
+    ),
     "etherscan": ModuleSpec(
         "etherscan", Tier.KEYED_FREE,
         # ETHERSCAN_API_KEY is preferred; BASESCAN_API_KEY accepted as fallback
@@ -295,6 +302,7 @@ CATEGORY_ORDER = (
 _DASHBOARD: dict[str, tuple[str, str]] = {
     "coingecko":     ("Prices & oracles", "spot & historical prices"),
     "pyth":          ("Prices & oracles", "on-chain oracle prices"),
+    "yahoo":         ("Prices & oracles", "non-crypto daily history"),
     "geckoterminal": ("DEX & tokens", "DEX pools & prices"),
     "dexscreener":   ("DEX & tokens", "DEX pairs & search"),
     "birdeye":       ("DEX & tokens", "Solana token analytics"),

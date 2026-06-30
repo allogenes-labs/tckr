@@ -113,6 +113,46 @@ async def feed_id_for_symbol(symbol: str) -> str | None:
     return None
 
 
+_NONCRYPTO_TYPES = ("equity", "metal", "fx", "rates", "commodities", "commodity")
+
+
+async def resolve_asset(symbol: str) -> dict | None:
+    """Classify a symbol against the Pyth catalog and return the best feed.
+
+    Returns `{symbol, asset_type, feed_id, all_types, noncrypto}` or None when
+    Pyth has no feed for the base. Unlike `feed_id_for_symbol` (which prefers a
+    crypto feed on a collision), this prefers a **non-crypto** feed when one
+    exists — that is what lets callers route equities/metals/FX away from the
+    crypto-only price/history cascade instead of silently pricing a same-ticker
+    token. For a base that only exists as crypto, `asset_type` is "crypto".
+    """
+    s = (symbol or "").strip()
+    if not s:
+        return None
+    base = s.upper().split("/")[0]
+    all_feeds = await feeds(query=base) or []
+
+    def _is_exact(f) -> bool:
+        sym = (f.get("symbol") or "").upper()
+        b = (f.get("base") or "").upper()
+        return (b == base or sym == base or sym == f"{base}/USD"
+                or sym.endswith(f".{base}/USD") or sym.endswith(f"/{base}/USD"))
+
+    exact = [f for f in all_feeds if _is_exact(f)]
+    if not exact:
+        return None
+    all_types = sorted({(f.get("asset_type") or "").lower() for f in exact if f.get("asset_type")})
+    noncrypto = [f for f in exact if (f.get("asset_type") or "").lower() in _NONCRYPTO_TYPES]
+    chosen = noncrypto[0] if noncrypto else exact[0]
+    return {
+        "symbol": base,
+        "asset_type": (chosen.get("asset_type") or "").lower() or "unknown",
+        "feed_id": chosen.get("id"),
+        "all_types": all_types,
+        "noncrypto": bool(noncrypto),
+    }
+
+
 async def latest_price(feed_ids: Iterable[str] | str) -> list[dict] | None:
     """Latest parsed prices for one or more feed ids.
 

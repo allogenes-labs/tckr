@@ -40,7 +40,9 @@ directly in `query`.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 from datetime import UTC, datetime
 
 from tckr import _http, settings
@@ -55,8 +57,16 @@ _cache = TTLCache()
 _MAX_RECORDS = 250
 _SORTS = ("datedesc", "dateasc", "tonedesc", "toneasc", "hybridrel")
 
+# Process-wide rate gate. GDELT 429s a burst of *distinct* queries (the TTL cache
+# only absorbs repeats), so we serialize uncached fetches and space them by
+# settings.GDELT_MIN_INTERVAL_S to honor the documented ~1 req / 5s limit. This
+# turns "31 of 47 calls 429'd" into reliable (if slower) delivery.
+_rate_lock = asyncio.Lock()
+_last_fetch_mono = 0.0
+
 
 async def _get(params: dict, label: str):
+    global _last_fetch_mono
     ttl = settings.GDELT_TTL_S
     key = tuple(sorted(params.items()))
     cached = _cache.get(key, ttl)
@@ -66,7 +76,21 @@ async def _get(params: dict, label: str):
         cached = _cache.get(key, ttl)
         if cached is not None:
             return cached
-        data = await _http.get_json(_BASE, params=params, label=label)
+        # Serialize cold fetches process-wide and space them END-TO-END by
+        # GDELT_MIN_INTERVAL_S. Spacing must be measured from the *completion* of
+        # the previous request, not its start: a 429 inside one call triggers
+        # _http's rapid 0.5/1s retries, so timing from the start would let the
+        # next call fire <5s after those retries and 429 again.
+        async with _rate_lock:
+            gap = settings.GDELT_MIN_INTERVAL_S
+            if gap > 0:
+                wait = gap - (time.monotonic() - _last_fetch_mono)
+                if wait > 0:
+                    await asyncio.sleep(wait)
+            try:
+                data = await _http.get_json(_BASE, params=params, label=label)
+            finally:
+                _last_fetch_mono = time.monotonic()
         # Throttle / empty responses come back as text (-> None here) — don't
         # cache those, so the next call retries instead of serving an empty hit.
         if not isinstance(data, dict):

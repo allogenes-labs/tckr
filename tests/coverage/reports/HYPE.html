@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HYPE — Asset Analysis (tckr, keyless)</title>
+<style>
+  :root{--bg:#0d1117;--card:#161b22;--ink:#e6edf3;--mut:#8b949e;--good:#3fb950;--bad:#f85149;--warn:#d29922;--accent:#58a6ff;--line:#30363d}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;padding:28px}
+  .wrap{max-width:880px;margin:0 auto}
+  h1{margin:0 0 2px;font-size:26px}
+  h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);margin:26px 0 10px;border-bottom:1px solid var(--line);padding-bottom:6px}
+  .sub{color:var(--mut);margin:0 0 18px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px}
+  .k{color:var(--mut);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+  .v{font-size:20px;font-weight:650;margin-top:4px}
+  .good{color:var(--good)}.bad{color:var(--bad)}.warn{color:var(--warn)}.accent{color:var(--accent)}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line)}
+  th{color:var(--mut);font-weight:600}
+  .pill{display:inline-block;font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--mut)}
+  .banner{background:#11261a;border:1px solid #1f5132;border-radius:10px;padding:12px 14px;font-size:13px;color:#a3d9b1}
+  .gap{background:#2b2410;border:1px solid #5c4711;border-radius:10px;padding:12px 14px;font-size:13px;color:#e3c878}
+  .foot{color:var(--mut);font-size:12px;margin-top:26px;border-top:1px solid var(--line);padding-top:12px}
+  code{background:#0b0f14;padding:1px 5px;border-radius:5px;color:#c9d1d9}
+</style>
+</head>
+<body><div class="wrap">
+
+  <h1>HYPE <span class="pill">Hyperliquid</span> <span class="pill">major crypto</span></h1>
+  <p class="sub">Asset analysis · generated from <strong>tckr</strong> with <strong>no API keys</strong> · 2026-06-29</p>
+
+  <div class="banner">✓ <strong>Full keyless coverage.</strong> HYPE is in the Hyperliquid perp + spot universe, so every price, candle, funding and technical read below comes from a live, no-rate-limit primary source — not a degraded fallback.</div>
+
+  <h2>Snapshot</h2>
+  <div class="grid">
+    <div class="card"><div class="k">Mark price</div><div class="v">$64.20</div></div>
+    <div class="card"><div class="k">24h change</div><div class="v good">+2.44%</div></div>
+    <div class="card"><div class="k">Spot price</div><div class="v">$64.21 <span class="k">basis +0.01%</span></div></div>
+    <div class="card"><div class="k">Open interest</div><div class="v">$1.34B</div></div>
+    <div class="card"><div class="k">24h volume (perp)</div><div class="v">$423M</div></div>
+    <div class="card"><div class="k">Max leverage</div><div class="v">10×</div></div>
+  </div>
+
+  <h2>Funding &amp; positioning</h2>
+  <div class="grid">
+    <div class="card"><div class="k">Funding APR</div><div class="v">10.95%</div></div>
+    <div class="card"><div class="k">Above baseline</div><div class="v">0.00%</div></div>
+    <div class="card"><div class="k">Premium (perp vs spot)</div><div class="v">+0.0013</div></div>
+  </div>
+  <p class="sub" style="margin-top:10px">Hyperliquid funding carries a built-in ~+10.95% APR interest-rate baseline. Funding is sitting <em>exactly on the baseline</em> with premium ≈ 0 and a 72-hour funding history flat at the floor — i.e. <strong>no crowded long positioning</strong>, the +10.95% is mechanical, not demand. (tckr exposes <code>funding_above_baseline_apr_pct</code> specifically so this isn't misread.)</p>
+
+  <h2>Risk &amp; performance — 180d</h2>
+  <div class="grid">
+    <div class="card"><div class="k">Cumulative return</div><div class="v good">+165.1%</div></div>
+    <div class="card"><div class="k">Annualized vol</div><div class="v">100.4%</div></div>
+    <div class="card"><div class="k">Max drawdown</div><div class="v bad">−28.5%</div></div>
+    <div class="card"><div class="k">Sharpe</div><div class="v">2.47</div></div>
+    <div class="card"><div class="k">Sortino</div><div class="v">4.31</div></div>
+    <div class="card"><div class="k">Calmar</div><div class="v">22.1</div></div>
+  </div>
+  <p class="sub" style="margin-top:10px">Computed deterministically from 180 daily HL closes. Strong risk-adjusted return, but ~100% annualized vol — size accordingly.</p>
+
+  <h2>Technicals — 120d</h2>
+  <table>
+    <tr><th>Indicator</th><th>Value</th><th>Read</th></tr>
+    <tr><td>Last close</td><td>$64.24</td><td>—</td></tr>
+    <tr><td>SMA(20) / EMA(20)</td><td>$64.60 / $64.07</td><td>price ≈ mean</td></tr>
+    <tr><td>RSI(14)</td><td>51.4</td><td><span class="warn">neutral</span></td></tr>
+    <tr><td>MACD hist</td><td>−0.90</td><td><span class="bad">momentum cooling (bearish cross)</span></td></tr>
+    <tr><td>Bollinger(20,2)</td><td>$55.10 – $74.09</td><td>mid-band</td></tr>
+    <tr><td>Z-score</td><td>+1.35</td><td>upper half of range</td></tr>
+    <tr><td>ATR(14)</td><td>$5.26</td><td>~8% daily range</td></tr>
+    <tr><td>Correlation / β vs BTC (90d)</td><td>0.50 / 1.30</td><td>moderate coupling, higher beta</td></tr>
+  </table>
+
+  <h2>News</h2>
+  <p class="sub">Keyless news returned <strong>0 articles</strong> for the "hyperliquid" query on this run. tckr's keyless news is outlet-RSS (cryptonews) + GDELT; per-token crypto coverage is thin and query-sensitive — broad headlines work, specific tokens often don't. <span class="warn">This is the one soft spot even for a top-tier asset.</span> A free <code>FINNHUB_API_KEY</code> or a social key (LunarCrush) would fill it.</p>
+
+  <div class="gap" style="margin-top:18px">⚙ <strong>What a key would add:</strong> cross-exchange funding/OI &amp; liquidations (Coinalyze), social sentiment / Galaxy Score (LunarCrush), and reliable per-asset news (Finnhub). None are needed for the core price/risk/technical read above — that is fully keyless.</div>
+
+  <p class="foot">Sources: Hyperliquid (price, spot, perp, funding, candles, technicals), CoinGecko (symbol search). All keyless. Generated by an agent composing tckr tools; figures are point-in-time and not investment advice.</p>
+
+</div></body></html>

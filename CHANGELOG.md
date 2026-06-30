@@ -6,6 +6,51 @@ All notable changes to `tckr` are documented here. Format roughly follows
 
 ## [Unreleased]
 
+### Added (keyless cross-asset coverage)
+- **Asset-class-aware `quote` routing.** `quote` now routes by asset class instead
+  of forcing every symbol through the crypto cascade: contract address →
+  DexScreener deepest pool; HL-universe ticker → Hyperliquid; non-crypto ticker
+  (equity/ETF/metal/FX, detected via the Pyth catalog) → Pyth oracle; else
+  CoinGecko. This fixes the silent **wrong-asset** blind spot where e.g. `XAU`
+  resolved to a microcap "gold" token and `SPY` to "SmartyPay". Results gain an
+  `asset_class` field; a CoinGecko-only result whose class can't be verified
+  carries a `warning`. `quote` also accepts a raw `0x…`/base58 token address.
+- **`tckr.yahoo` — keyless non-crypto daily history.** New source (Yahoo Finance
+  public chart API) for US equities/ETFs, metals, energy, and FX. `candles` /
+  `ohlc` route non-crypto symbols here so `ta_risk` / `ta_indicators` work for
+  MU, Gold, SPY, etc. — and deliberately do **not** fall back to CoinGecko for a
+  confirmed non-crypto symbol (absent beats a wrong same-ticker token). Stooq was
+  evaluated first but now gates its CSV behind a JS proof-of-work wall. Includes
+  a `spot()` (chart-meta price) and a commodity classification fallback so
+  assets Pyth's catalog lacks — e.g. **WTI crude** (→ `CL=F`), Brent, NatGas —
+  still resolve keyless for both `quote` and `ta_*` instead of hitting the crypto
+  cascade.
+- **`token_resolve` tool.** Disambiguates a token *symbol* into concrete contract
+  candidates ranked by liquidity (deduped to distinct tokens), returning
+  `n_distinct_tokens` + `ambiguous` so an agent picks a `token_address` instead of
+  trusting a bare-symbol price for a copycat-heavy memecoin (e.g. 19 tokens named
+  "ANSEM").
+- **Security tools exposed.** `security_token` (GoPlus) and `honeypot_check`
+  (honeypot.is) are now first-class agent tools (previously keyless-configured but
+  unreachable from the toolkit).
+- **`capabilities` usage hints.** `capabilities` and `render_tools_doc` now emit
+  per-asset-class routing hints (Pyth for non-crypto spot, Yahoo for history, CBOE
+  for options, `token_resolve` for memecoins, security tools, `warning` semantics).
+
+### Fixed
+- **TA guardrails for short/young series.** `ta_risk` annualizes on 252 for tradfi
+  vs 365 for crypto, and suppresses annualized vol/Sharpe/Sortino/Calmar (returning
+  `null` + a `warnings` entry and `data_quality.reliable=false`) when a series is
+  < 30 bars or contains an extreme single-bar move — no more "25,000% annualized
+  vol" on a freshly-launched pool. `ta_indicators`/`ta_correlation` gain the same
+  `warnings` (incl. an implausible-beta flag). `ta_*` now emit an asset-class-aware
+  "no keyless history" message pointing to `py_latest_price`/`opt_chain`.
+- **GDELT rate-limit robustness.** A process-wide gate spaces uncached GDELT
+  requests by `GDELT_MIN_INTERVAL_S` (default 5s) so a burst of distinct queries
+  no longer 429s (was 31/47 failing in the keyless audit).
+- **`quote` tool description** corrected (was "CoinGecko → Hyperliquid"; the
+  cascade is HL-first).
+
 ## [0.4.0] — 2026-06-28
 
 ### Fixed (codebase audit)
