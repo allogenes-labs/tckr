@@ -20,7 +20,11 @@ All notable changes to `tckr` are documented here. Format roughly follows
   `ohlc` route non-crypto symbols here so `ta_risk` / `ta_indicators` work for
   MU, Gold, SPY, etc. — and deliberately do **not** fall back to CoinGecko for a
   confirmed non-crypto symbol (absent beats a wrong same-ticker token). Stooq was
-  evaluated first but now gates its CSV behind a JS proof-of-work wall.
+  evaluated first but now gates its CSV behind a JS proof-of-work wall. Includes
+  a `spot()` (chart-meta price) and a commodity classification fallback so
+  assets Pyth's catalog lacks — e.g. **WTI crude** (→ `CL=F`), Brent, NatGas —
+  still resolve keyless for both `quote` and `ta_*` instead of hitting the crypto
+  cascade.
 - **`token_resolve` tool.** Disambiguates a token *symbol* into concrete contract
   candidates ranked by liquidity (deduped to distinct tokens), returning
   `n_distinct_tokens` + `ambiguous` so an agent picks a `token_address` instead of

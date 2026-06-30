@@ -44,6 +44,7 @@ from tckr import coingecko as cg
 from tckr import dexscreener as ds
 from tckr import hyperliquid as hl
 from tckr import pyth
+from tckr import yahoo
 
 log = logging.getLogger("tckr.quotes")
 
@@ -184,6 +185,17 @@ async def get(symbols: list[str] | str) -> dict[str, dict]:
         if r is not None:
             out[key] = r
             return
+
+        # 3b. Commodity Pyth doesn't carry (e.g. WTI crude) — Yahoo spot, so it
+        #     still resolves keyless instead of falling to the crypto cascade.
+        nc_class = yahoo.fallback_asset_class(sym)
+        if nc_class:
+            r = await yahoo.spot(sym, asset_class=nc_class)
+            if r is not None:
+                r["ts"] = _now_iso()
+                out[key] = r
+                return
+            return  # confirmed non-crypto — don't mis-resolve via CoinGecko
 
         # 4. CoinGecko — crypto long-tail / backstop. Verify class via Pyth so an
         #    unverifiable resolution is flagged, not trusted silently.

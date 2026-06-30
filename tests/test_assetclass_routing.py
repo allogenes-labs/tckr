@@ -31,6 +31,16 @@ def test_yahoo_map_symbol(ticker, cls, expected):
     assert yahoo.map_symbol(ticker, cls) == expected
 
 
+@pytest.mark.parametrize("ticker,expected", [
+    ("WTI", "energy"), ("BRENT", "energy"), ("NATGAS", "energy"),
+    ("MU", None), ("BTC", None), ("XAU", None),   # Pyth covers these → no fallback
+])
+def test_yahoo_fallback_asset_class(ticker, expected):
+    # Commodities Pyth lacks (WTI etc.) get a fallback class so they still route
+    # to Yahoo instead of the crypto cascade; Pyth-covered symbols return None.
+    assert yahoo.fallback_asset_class(ticker) == expected
+
+
 def test_yahoo_map_symbol_empty():
     assert yahoo.map_symbol("") is None
     assert yahoo.map_symbol("   ") is None
@@ -161,3 +171,39 @@ async def test_quote_by_address(monkeypatch):
     assert out[addr]["source"] == "dexscreener"
     assert out[addr]["price"] == 0.5
     assert out[addr]["asset_class"] == "crypto"
+
+
+# --------------------------- GDELT rate gate (mocked HTTP) ---------------------------
+
+async def test_gdelt_rate_gate_spaces_requests(monkeypatch):
+    """The GDELT gate must serialize cold fetches and space them end-to-end by
+    GDELT_MIN_INTERVAL_S — proven deterministically by recording the timestamps
+    of a mocked HTTP layer, so it doesn't depend on the live (throttle-prone)
+    GDELT endpoint."""
+    import asyncio
+    import time
+    from tckr import gdelt, settings
+
+    interval = 0.25
+    monkeypatch.setattr(settings, "GDELT_MIN_INTERVAL_S", interval)
+    gdelt._last_fetch_mono = 0.0  # reset the process-wide gate clock
+
+    hits: list[float] = []
+
+    async def fake_get_json(url, *, params=None, headers=None, label=""):
+        hits.append(time.monotonic())
+        return {"articles": [{"url": "http://x", "title": "t", "domain": "d",
+                              "seendate": "20260101T000000Z"}]}
+
+    monkeypatch.setattr("tckr._http.get_json", fake_get_json)
+
+    # Four DISTINCT queries → four cold cache keys → four real fetches.
+    results = await asyncio.gather(*(
+        gdelt.articles(f"query number {i}", timespan="1d", max_records=3)
+        for i in range(4)
+    ))
+    assert all(r for r in results)        # every call delivered data
+    assert len(hits) == 4                 # serialized, not deduped
+    gaps = [b - a for a, b in zip(hits, hits[1:])]
+    # Each consecutive upstream fetch is spaced ~>= interval (allow scheduling slack).
+    assert all(g >= interval * 0.9 for g in gaps), gaps

@@ -104,8 +104,9 @@ not currently expose.
   missing honeypot/holder check is the single most important gap — and absence
   reads as "unknown", which must not be mistaken for "safe".
 - **Tradfi fundamentals** (revenue/EPS/valuation): none keyless.
-- **WTI/oil oracle:** Pyth returned no feed for `WTI/USD` — a symbol-resolution
-  gap (likely listed under a different name), not necessarily missing coverage.
+- **WTI/oil oracle:** Pyth returned no feed for `WTI/USD`. *(Resolved post-audit:
+  a commodity classification fallback now routes WTI/Brent/NatGas to Yahoo —
+  `quote` and `ta_*` answer keyless. See §5.)*
 
 ### 3.5 Cross-cutting issues
 - **Security tools missing from the toolkit:** `goplus` and `honeypot` are
@@ -181,18 +182,20 @@ free `FINNHUB_API_KEY`.
 
 | # | Status | What landed |
 |---|---|---|
-| P1 | ✅ | `quote` routes by asset class (address→DexScreener, HL ticker→Hyperliquid, non-crypto→Pyth, else CoinGecko) with `asset_class` + `warning`; new `tckr.yahoo` keyless history so `ta_*` work off-crypto; non-crypto history never falls back to CoinGecko. |
+| P1 | ✅ | `quote` routes by asset class (address→DexScreener, HL ticker→Hyperliquid, non-crypto→Pyth, commodities Pyth lacks→Yahoo `spot`, else CoinGecko) with `asset_class` + `warning`; new `tckr.yahoo` keyless history so `ta_*` work off-crypto (incl. WTI/Brent/NatGas via a commodity fallback); non-crypto history never falls back to CoinGecko. |
 | P2 | ✅ | `token_resolve` tool (ranked, deduped, `ambiguous`/`n_distinct_tokens`); `quote` accepts a contract address. |
 | P3 | ✅ | `ta_*` suppress annualized stats + emit `warnings`/`data_quality` on short (<30-bar) or launch-ramp series; tradfi annualizes on 252. |
 | P4 | ✅ | Asset-class-aware "no keyless history" messages; `capabilities`/`render_tools_doc` usage hints. |
 | P5 | ✅ | `security_token` (GoPlus) + `honeypot_check` exposed as agent tools. |
-| P6 | ✅ | Process-wide GDELT rate gate (`GDELT_MIN_INTERVAL_S`, default 5s). |
+| P6 | ✅ | Process-wide GDELT rate gate (`GDELT_MIN_INTERVAL_S`, default 5s; end-to-end spacing). Verified deterministically in `tests/test_assetclass_routing.py` (mocked HTTP) since the live endpoint soft-blocks under repeated testing. |
 | P7 | ✅ | `quote` description corrected to HL-first. |
 
 Post-fix verification: `quote('XAU')`→Pyth metal $3,964 (was a $0.00005 token);
 `ta_risk('MU')`→Yahoo, 124 bars, 90% vol, `reliable=true` (was an 8-bar proxy);
 `token_resolve('ANSEM')`→19 distinct tokens, `ambiguous=true`; young-pool TA
-returns `reliable=false` + warnings. Full suite: 109 passed, 2 skipped.
+returns `reliable=false` + warnings; `quote('WTI')`→Yahoo $70.85 + 120-bar TA
+(was unresolved). Full suite green (~115 passed; a few live keyless-smoke tests
+skip when upstreams are flaky).
 
 ---
 

@@ -40,8 +40,20 @@ _HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
 
 _METALS = {"XAU": "GC=F", "GOLD": "GC=F", "XAG": "SI=F", "SILVER": "SI=F",
            "XPT": "PL=F", "XPD": "PA=F"}
-_ENERGY = {"WTI": "CL=F", "CL": "CL=F", "OIL": "CL=F", "USOIL": "CL=F",
-           "BRENT": "BZ=F", "UKOIL": "BZ=F", "NATGAS": "NG=F", "NG": "NG=F"}
+_ENERGY = {"WTI": "CL=F", "USOIL": "CL=F", "BRENT": "BZ=F", "UKOIL": "BZ=F",
+           "NATGAS": "NG=F"}
+
+# Commodity tickers Pyth's catalog does NOT carry (so `pyth.resolve_asset`
+# returns None for them) but Yahoo does. Used as a classification *fallback* so
+# these still route to Yahoo instead of the crypto cascade. Kept tight and
+# commodity-canonical to avoid hijacking a same-named crypto token; HL-universe
+# and Pyth-crypto checks run BEFORE this fallback, so crypto majors are safe.
+_FALLBACK_CLASS = {t: "energy" for t in _ENERGY}
+
+
+def fallback_asset_class(ticker: str) -> str | None:
+    """Non-crypto class for a commodity ticker Pyth lacks (e.g. WTI), else None."""
+    return _FALLBACK_CLASS.get((ticker or "").strip().upper())
 
 
 def _f(v) -> float | None:
@@ -141,6 +153,41 @@ async def daily(yahoo_symbol: str, *, days: int = 90) -> list[dict] | None:
     if not bars:
         return None
     return bars[-days:]
+
+
+async def spot(ticker: str, asset_class: str | None = None) -> dict | None:
+    """Latest spot price for a non-crypto ticker via the chart `meta`
+    (regularMarketPrice, falling back to the last close). Returns
+    `{symbol, price, source:'yahoo', asset_class, yahoo_symbol}` or None.
+
+    Used for assets Pyth's oracle doesn't carry (e.g. WTI crude) so `quote`
+    can still answer keyless instead of dropping to the crypto cascade."""
+    sym = map_symbol(ticker, asset_class)
+    if not sym or not _http.safe_path_segment(sym):
+        return None
+    ck = ("spot", sym.upper())
+
+    async def _fetch() -> float | None:
+        body = await _http.get_json(
+            f"{_BASE}/{sym}", params={"interval": "1d", "range": "5d"},
+            headers=_HEADERS, label=f"yahoo spot {sym}")
+        if not isinstance(body, dict):
+            return None
+        try:
+            res = body["chart"]["result"][0]
+            px = (res.get("meta") or {}).get("regularMarketPrice")
+        except (KeyError, IndexError, TypeError):
+            px = None
+        if px is None:
+            bars = _parse_chart(body, days=5)
+            px = bars[-1]["c"] if bars else None
+        return _f(px)
+
+    px = await _cache.cached(ck, settings.YAHOO_SPOT_TTL_S, _fetch)
+    if px is None:
+        return None
+    return {"symbol": ticker.strip().upper(), "price": px, "source": "yahoo",
+            "asset_class": asset_class, "yahoo_symbol": sym}
 
 
 async def history(ticker: str, *, asset_class: str | None = None,

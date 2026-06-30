@@ -182,8 +182,10 @@ ETHERSCAN_STATS_TTL_S    = _env_int("TCKR_ETHERSCAN_STATS_TTL_S", 600)
 SOLSCAN_TTL_S            = _env_int("TCKR_SOLSCAN_TTL_S", 60)
 
 # ---------- Yahoo Finance (keyless non-crypto daily history) ----------
-# Daily bars are immutable once the session closes; cache long.
+# Daily bars are immutable once the session closes; cache long. Spot price
+# (chart meta) moves intraday — cache short.
 YAHOO_TTL_S              = _env_int("TCKR_YAHOO_TTL_S", 3600)
+YAHOO_SPOT_TTL_S         = _env_int("TCKR_YAHOO_SPOT_TTL_S", 30)
 
 # ---------- LunarCrush ----------
 LUNARCRUSH_TTL_S         = _env_int("TCKR_LUNARCRUSH_TTL_S", 120)
