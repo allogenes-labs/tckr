@@ -181,6 +181,10 @@ ETHERSCAN_STATS_TTL_S    = _env_int("TCKR_ETHERSCAN_STATS_TTL_S", 600)
 # ---------- Solscan ----------
 SOLSCAN_TTL_S            = _env_int("TCKR_SOLSCAN_TTL_S", 60)
 
+# ---------- Yahoo Finance (keyless non-crypto daily history) ----------
+# Daily bars are immutable once the session closes; cache long.
+YAHOO_TTL_S              = _env_int("TCKR_YAHOO_TTL_S", 3600)
+
 # ---------- LunarCrush ----------
 LUNARCRUSH_TTL_S         = _env_int("TCKR_LUNARCRUSH_TTL_S", 120)
 
@@ -199,6 +203,10 @@ THEGRAPH_TTL_S           = _env_int("TCKR_THEGRAPH_TTL_S", 60)
 CRYPTONEWS_TTL_S          = _env_int("TCKR_CRYPTONEWS_TTL_S", 300)
 # GDELT DOC API — respect the ~1 req / 5s soft limit; cache keeps us well under.
 GDELT_TTL_S               = _env_int("TCKR_GDELT_TTL_S", 300)
+# Minimum spacing between *uncached* GDELT requests. GDELT 429s a burst of
+# distinct queries (the cache only absorbs repeats); a process-wide gate serializes
+# cold calls to honor the documented ~1 req / 5s limit. Set 0 to disable.
+GDELT_MIN_INTERVAL_S      = _env_float("TCKR_GDELT_MIN_INTERVAL_S", 5.0)
 # Finnhub market/company news — fairly fast-moving headline stream.
 FINNHUB_TTL_S             = _env_int("TCKR_FINNHUB_TTL_S", 120)
 
