@@ -8,10 +8,8 @@ from __future__ import annotations
 
 import pytest
 
-from tckr import yahoo
-from tckr import quotes
+from tckr import quotes, yahoo
 from tckr.agent_toolkit import core
-
 
 # --------------------------- yahoo.map_symbol ---------------------------
 
@@ -182,6 +180,7 @@ async def test_gdelt_rate_gate_spaces_requests(monkeypatch):
     GDELT endpoint."""
     import asyncio
     import time
+
     from tckr import gdelt, settings
 
     interval = 0.25
@@ -204,6 +203,6 @@ async def test_gdelt_rate_gate_spaces_requests(monkeypatch):
     ))
     assert all(r for r in results)        # every call delivered data
     assert len(hits) == 4                 # serialized, not deduped
-    gaps = [b - a for a, b in zip(hits, hits[1:])]
+    gaps = [b - a for a, b in zip(hits, hits[1:], strict=False)]
     # Each consecutive upstream fetch is spaced ~>= interval (allow scheduling slack).
     assert all(g >= interval * 0.9 for g in gaps), gaps

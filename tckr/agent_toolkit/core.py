@@ -1943,7 +1943,7 @@ def _assess_series_quality(closes: list, asset_class: str | None) -> dict:
             "Sortino/Calmar suppressed as unreliable on so short a series")
     # Extreme single-bar move ⇒ launch ramp / illiquid; annualization explodes.
     extreme = False
-    for prev, cur in zip(closes or [], (closes or [])[1:]):
+    for prev, cur in zip(closes or [], (closes or [])[1:], strict=False):
         if prev and prev > 0 and abs(cur / prev - 1.0) > _EXTREME_BAR_RETURN:
             extreme = True
             break

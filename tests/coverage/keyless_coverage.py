@@ -50,8 +50,8 @@ _KEY_ENV = [
 ]
 _SCRUBBED = sorted(k for k in _KEY_ENV if os.environ.pop(k, None) is not None)
 
-from tckr.agent_toolkit import core  # noqa: E402
 from tckr import registry  # noqa: E402
+from tckr.agent_toolkit import core  # noqa: E402
 
 SLEEP = float(os.environ.get("COV_SLEEP", "1.5"))
 GDELT_EXTRA = 4.0  # GDELT soft limit ~1 req/5s — extra pause after each gdelt call

@@ -40,8 +40,7 @@ from datetime import UTC, datetime
 
 from tckr import coingecko as cg
 from tckr import hyperliquid as hl
-from tckr import pyth
-from tckr import yahoo
+from tckr import pyth, yahoo
 
 log = logging.getLogger("tckr.history")
 
