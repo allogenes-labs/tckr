@@ -106,7 +106,6 @@ def _parse_chart(body: dict, days: int) -> list[dict] | None:
         res = result[0]
         ts = res.get("timestamp") or []
         q = ((res.get("indicators") or {}).get("quote") or [{}])[0]
-        opens, highs, lows = q.get("open") or [], q.get("high") or [], q.get("close") or []
         closes, vols = q.get("close") or [], q.get("volume") or []
     except (AttributeError, IndexError, TypeError):
         return None
